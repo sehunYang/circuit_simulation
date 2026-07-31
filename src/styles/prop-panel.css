@@ -1,0 +1,28 @@
+/* ════════════════════════════════════════════════════════════════
+ * 6. 속성 패널
+ * ════════════════════════════════════════════════════════════════ */
+#prop-panel {
+  position: absolute; bottom: 72px; right: 12px; width: 210px;
+  background: var(--bg-panel); border: 1px solid var(--border-base);
+  border-radius: var(--radius-lg); padding: 12px 14px; z-index: 20; display: none;
+  backdrop-filter: var(--blur); box-shadow: var(--shadow-panel);
+}
+#prop-panel.visible { display: block; }
+.pp-title { font-size: 10px; font-weight: 700; color: var(--text-title); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; border-bottom: 1px solid var(--border-base); padding-bottom: 6px; }
+#prop-content { font-size: 11px; color: #8aaccc; }
+.pp-row { display: flex; justify-content: space-between; margin-bottom: 5px; align-items: center; }
+.pp-key { color: var(--text-dim); }
+.pp-val { color: var(--text-accent); font-weight: 600; }
+.pp-input { background: #0d1828; border: 1px solid #2a4a70; border-radius: var(--radius-sm); color: var(--text-accent); font-size: 11px; font-family: var(--font-mono); width: 80px; padding: 3px 6px; text-align: right; }
+.pp-input:focus { outline: none; border-color: var(--border-focus); }
+.pp-input.invalid { border-color: #c05050 !important; background: #1e0a0a !important; }
+.pp-input.changed { border-color: var(--border-focus); }
+.pp-measure { margin-top: 7px; padding-top: 7px; border-top: 1px solid #1a2a40; }
+.pp-btns { display: flex; gap: 5px; margin-top: 10px; }
+.pp-btn { flex: 1; padding: 5px 0; border-radius: 5px; font-size: 10px; cursor: pointer; font-family: var(--font-mono); border: 1px solid; transition: background 0.1s; }
+.pp-btn-rotate { background:#1a3050; border-color:#2a4a70; color:var(--text-accent); }
+.pp-btn-rotate:hover { background:#253d65; }
+.pp-btn-delete { background:var(--danger-bg); border-color:var(--danger-border); color:var(--danger-text); }
+.pp-btn-delete:hover { background:#4f1c1c; }
+.pp-wire-dir { background:#162535; border-color:#1e4060; color:#60a8d8; }
+.pp-wire-dir:hover { background:#1c3045; }

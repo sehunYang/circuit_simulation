@@ -1,0 +1,56 @@
+/* ════════════════════════════════════════════════════════════════
+ * 디자인 토큰 (CSS Custom Properties)
+ * ──────────────────────────────────────────────────────────────
+ * 색상·간격·반경을 한 곳에서 관리. 값 변경 시 전체 일괄 반영됨.
+ * ════════════════════════════════════════════════════════════════ */
+:root {
+  /* 배경 계열 */
+  --bg-app:        #0d0f1a;   /* 앱 전체 배경 */
+  --bg-sidebar:    #111827;   /* 사이드바 */
+  --bg-item:       #1a2438;   /* 사이드바 아이템 */
+  --bg-panel:      rgba(10,16,30,0.97);   /* 속성 패널 */
+  --bg-panel-deep: rgba(6,12,28,0.98);    /* 그래프 패널 */
+  --bg-glass:      rgba(17,24,39,0.90);   /* 반투명 버튼 */
+  --bg-popup:      rgba(8,14,32,0.98);    /* 값 입력 팝업 */
+  --bg-ctx:        rgba(14,22,40,0.97);   /* 컨텍스트 메뉴 */
+
+  /* 테두리 계열 */
+  --border-dim:    #1e2d45;   /* 약한 구분선 */
+  --border-base:   #1e3050;   /* 기본 테두리 */
+  --border-item:   #253450;   /* 아이템 테두리 */
+  --border-active: #2d6fc0;   /* 활성 강조 */
+  --border-focus:  #4a90d9;   /* 입력 포커스 */
+
+  /* 텍스트 계열 */
+  --text-base:     #c8d6e5;   /* 기본 본문 */
+  --text-dim:      #506a88;   /* 흐린 텍스트 */
+  --text-label:    #607a99;   /* 라벨 */
+  --text-accent:   #7ec8f0;   /* 강조(하늘색) */
+  --text-accent2:  #9ecfff;   /* 강조(밝은 하늘) */
+  --text-title:    #4a90d9;   /* 제목 */
+
+  /* 위험(삭제) 계열 */
+  --danger-bg:     #3a1010;
+  --danger-border: #5a2020;
+  --danger-text:   #f08080;
+
+  /* 형태 */
+  --radius-sm:  4px;
+  --radius-md:  8px;
+  --radius-lg:  10px;
+  --radius-xl:  14px;
+  --radius-pill: 36px;
+
+  /* 효과 */
+  --blur:        blur(12px);
+  --shadow-panel: 0 4px 20px rgba(0,0,0,0.5);
+  --shadow-float: 0 6px 32px rgba(0,0,0,0.7);
+
+  /* 폰트 */
+  --font-mono: 'Courier New', 'Consolas', monospace;
+
+  /* 레이아웃 치수 */
+  --sidebar-w:   72px;   /* 데스크톱 사이드바 폭 */
+  --item-size:   54px;   /* 사이드바 아이템 크기 */
+  --btn-size:    36px;   /* 원형 버튼 크기 */
+}

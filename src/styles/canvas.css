@@ -1,0 +1,35 @@
+/* ════════════════════════════════════════════════════════════════
+ * 3. 캔버스 영역
+ * ════════════════════════════════════════════════════════════════ */
+#canvas-container { flex: 1; position: relative; overflow: hidden; background: var(--bg-app); }
+#canvas-bg, #canvas-main, #canvas-anim { position: absolute; top: 0; left: 0; display: block; }
+#canvas-bg   { z-index: 1; }
+#canvas-main { z-index: 2; }
+#canvas-anim { z-index: 3; pointer-events: none; }
+
+/* 드래그 미리보기 고스트 */
+#drag-ghost {
+  position: fixed; pointer-events: none; z-index: 9998;
+  display: none; transform: translate(-50%,-50%);
+  opacity: 0.82; filter: drop-shadow(0 0 8px #3a9de0);
+}
+
+/* 드래그 삭제 존 (canvas-container 기준 absolute) */
+#delete-zone {
+  position: absolute; left: 9px; bottom: 60px; top: auto;
+  width: var(--item-size);
+  border-radius: var(--radius-lg); border: 2px dashed #3a5a7a;
+  background: rgba(8,14,32,0.90); color: #3a5a7a; text-align: center;
+  display: none; flex-direction: column; align-items: center; justify-content: flex-end;
+  padding-bottom: 10px; gap: 4px;
+  z-index: 20;   /* canvas-anim(3)보다 위 */
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  pointer-events: none; user-select: none;
+}
+#delete-zone.visible { display: flex; }
+#delete-zone.hover {
+  border-color: #e05050; background: rgba(80,10,10,0.85); color: #ff8080;
+  box-shadow: 0 0 16px rgba(220,50,50,0.5);
+}
+#delete-zone .dz-icon  { font-size: 20px; line-height: 1; }
+#delete-zone .dz-label { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; font-family: var(--font-mono); }

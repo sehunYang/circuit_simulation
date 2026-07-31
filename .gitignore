@@ -1,0 +1,13 @@
+# 에디터 / 도구 상태
+.omc/
+.vscode/
+.idea/
+
+# OS 생성 파일
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 로그 / 임시
+*.log
+*.tmp

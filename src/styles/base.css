@@ -1,0 +1,13 @@
+/* ════════════════════════════════════════════════════════════════
+ * 1. 리셋 & 기본 레이아웃
+ * ════════════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; }
+
+body {
+  display: flex; flex-direction: row;
+  height: 100dvh; overflow: hidden;
+  background: var(--bg-app);
+  font-family: var(--font-mono);
+  color: var(--text-base);
+}

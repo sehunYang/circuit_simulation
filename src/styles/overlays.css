@@ -1,0 +1,24 @@
+/* ════════════════════════════════════════════════════════════════
+ * 10. 토스트 & 연결 힌트 & 정보 오버레이
+ * ════════════════════════════════════════════════════════════════ */
+#toast {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  background: #9b2c2c; border: 1px solid #c53030; color: #fff;
+  padding: 9px 20px; border-radius: 6px; font-size: 12px; font-family: var(--font-mono);
+  z-index: 9999; opacity: 0; pointer-events: none; transition: opacity 0.3s;
+  white-space: nowrap; box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+}
+#toast.visible { opacity: 1; }
+
+#conn-hint {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(22,60,130,0.9); border: 1px solid #3a7bd5; color: var(--text-accent2);
+  padding: 5px 16px; border-radius: 20px; font-size: 11px; font-family: var(--font-mono);
+  z-index: 15; pointer-events: none; opacity: 0; transition: opacity 0.25s; white-space: nowrap;
+}
+#conn-hint.visible { opacity: 1; }
+
+#info-overlay {
+  position: absolute; bottom: 14px; left: 8px; font-size: 10px; color: #2a3e58;
+  font-family: var(--font-mono); z-index: 5; pointer-events: none; letter-spacing: 0.5px;
+}

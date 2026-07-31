@@ -1,0 +1,27 @@
+/* ════════════════════════════════════════════════════════════════
+ * 5. Undo/Redo + 표시 토글 바 (canvas-container 기준 absolute)
+ *    left:8px = 캔버스 좌측 끝에서 8px → 사이드바와 분리
+ * ════════════════════════════════════════════════════════════════ */
+#undo-bar {
+  position: absolute; bottom: 14px; left: 8px;
+  z-index: 20; display: flex; gap: 2px;
+}
+/* 원형 버튼 공통 (undo·redo·가시토글 공유) */
+.undo-btn, .vis-btn {
+  width: var(--btn-size); height: var(--btn-size); border-radius: 18px;
+  background: var(--bg-glass); border: 1px solid var(--border-base);
+  color: var(--text-dim); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s; backdrop-filter: blur(8px);
+}
+.undo-btn { font-size: 14px; }
+.vis-btn  { font-size: 15px; font-family: var(--font-mono); font-weight: 700; }
+.undo-btn:hover:not(:disabled),
+.vis-btn:hover:not(.active) { color: var(--text-accent); border-color: var(--border-active); background: rgba(30,60,120,0.7); }
+.undo-btn:disabled { opacity: 0.28; cursor: default; }
+.vis-btn.active {
+  color: var(--text-accent); border-color: var(--border-active);
+  background: rgba(20,50,110,0.85); box-shadow: 0 0 8px rgba(60,140,240,0.3);
+}
+.vis-btn .vis-label { display: none; }
+#vis-sep { width: 1px; height: 24px; background: var(--border-base); margin: 0 4px; align-self: center; }

@@ -1,0 +1,362 @@
+(function(){
+'use strict';
+var App=window.App;
+
+/* ════════════════════════════════════════════════════════════════════
+ * App.PropPanel — 선택된 소자/도선의 속성 패널
+ *
+ *   소자: 유형 헤더 · 이름 입력 · 물리량(값 버튼→ValPopup) · 연결 정보
+ *         · 측정값(전류/전압/전력, DC/AC 분기) · 회전/삭제
+ *   도선: 출발/도착 · 꺾임 방향 전환 · 전류 · 삭제
+ *
+ *   FIELDS 테이블: 소자별 편집 가능 물리량 정의
+ *     {label, key, unit, ds(표시배율), df(소수자리), min, max, step}
+ * ════════════════════════════════════════════════════════════════════ */
+App.PropPanel=(function(){
+  var _panel,_content;
+
+  var LABELS={
+    DC_SOURCE:'직류 전원',AC_SOURCE:'교류 전원',RESISTOR:'저항',
+    CAPACITOR:'축전기',INDUCTOR:'인덕터',
+    JUNCTION_3:'3방향 교차',JUNCTION_4:'4방향 교차',
+  };
+
+  // {label, key, unit, displayScale, displayFixed, min, max, step}
+  var FIELDS={
+    DC_SOURCE:[{label:'전압',    key:'value', unit:'V',  ds:1,   df:1, min:0,     max:9999, step:1}],
+    AC_SOURCE:[{label:'전압',    key:'value', unit:'V',  ds:1,   df:1, min:0,     max:9999, step:1},
+               {label:'주파수', key:'value2',unit:'Hz', ds:1,   df:0, min:1,     max:1e6,  step:1}],
+    RESISTOR: [{label:'저항',   key:'value', unit:'Ω',  ds:1,   df:0, min:0.001, max:1e9,  step:1}],
+    CAPACITOR:[{label:'전기용량',key:'value',unit:'µF', ds:1e6, df:2, min:0.001, max:1e6,  step:1}],
+    INDUCTOR: [{label:'인덕턴스',key:'value',unit:'mH', ds:1e3, df:2, min:0.001, max:1e6,  step:1}],
+  };
+
+  // ── 측정값 포맷 — 크기에 따라 단위 자동 선택 ──
+
+  /* 범용 SI 소단위 포맷터: value(기본단위) → "12.34 µX" 형태
+   *   unit: 기본 단위 문자(C/Wb/J 등). p/n/µ/m 접두어 자동 선택. */
+  function _fmtSI(value, unit){
+    var a=Math.abs(value);
+    if(a<1e-9) return (value*1e12).toFixed(2)+' p'+unit;
+    if(a<1e-6) return (value*1e9 ).toFixed(2)+' n'+unit;
+    if(a<1e-3) return (value*1e6 ).toFixed(2)+' µ'+unit;
+    if(a<1)    return (value*1e3 ).toFixed(2)+' m'+unit;
+    return value.toFixed(4)+' '+unit;
+  }
+  function _fmtCurrent(A){
+    if(A==null) return '계산 불가';
+    var abs=Math.abs(A);
+    if(abs===0) return '0 A';
+    if(abs<1e-6)  return (A*1e9).toFixed(2)+' nA';
+    if(abs<1e-3)  return (A*1e6).toFixed(2)+' µA';
+    if(abs<1)     return (A*1e3).toFixed(3)+' mA';
+    return A.toFixed(4)+' A';
+  }
+  function _fmtVoltage(V){
+    if(V==null) return '계산 불가';
+    if(Math.abs(V)<0.001) return (V*1000).toFixed(2)+' mV';
+    return V.toFixed(4)+' V';
+  }
+  function _fmtPower(W){
+    if(W==null) return '계산 불가';
+    return W.toFixed(2)+' W'; // 교육용: W 고정
+  }
+
+  function init(){_panel=document.getElementById('prop-panel');_content=document.getElementById('prop-content');}
+
+  function show(id){
+    var comp=App.State.getComponent(id);
+    if(!comp){var wire=App.State.getWire(id);if(wire){_renderWire(wire);return;}hide();return;}
+    _panel.classList.add('visible');
+    _renderComp(comp);
+  }
+
+  function hide(){_panel.classList.remove('visible');if(_content)_content.innerHTML='';}
+
+  function refresh(){var id=App.State.selectedId;if(id)show(id);else hide();}
+
+  function _renderComp(comp){
+    _content.innerHTML='';
+
+    /* ── 유형 헤더 ── */
+    var hdr=document.createElement('div');
+    hdr.style.cssText='color:#7ec8f0;font-weight:700;font-size:11px;margin-bottom:8px;'+
+                      'display:flex;align-items:center;justify-content:space-between';
+    var typeSpan=document.createElement('span');typeSpan.textContent=LABELS[comp.type]||comp.type;
+    var rotInfo=document.createElement('span');
+    rotInfo.style.cssText='color:#3a5a7a;font-size:10px';
+    rotInfo.textContent=comp.rotation+'°';
+    hdr.appendChild(typeSpan);hdr.appendChild(rotInfo);
+    _content.appendChild(hdr);
+
+    /* ── 사용자 라벨 입력 ── */
+    var lblRow=document.createElement('div');lblRow.className='pp-row';
+    var lblKey=document.createElement('span');lblKey.className='pp-key';lblKey.textContent='이름';
+    var lblInp=document.createElement('input');
+    lblInp.className='pp-input';lblInp.type='text';
+    lblInp.style.width='100px';
+    lblInp.placeholder='(선택사항)';
+    lblInp.value=comp.label||'';
+    lblInp.addEventListener('focus',function(){this.select();});
+    lblInp.addEventListener('keydown',function(e){
+      e.stopPropagation(); // 키보드 단축키 차단
+      if(e.key==='Enter'){this.blur();}
+      if(e.key==='Escape'){this.value=comp.label||'';this.blur();}
+    });
+    lblInp.addEventListener('change',function(){
+      comp.label=this.value.trim();
+      rotInfo.textContent=comp.rotation+'°';
+      App.Events.emit('state:changed');
+    });
+    lblInp.addEventListener('pointerdown',function(e){e.stopPropagation();});
+    lblRow.appendChild(lblKey);lblRow.appendChild(lblInp);
+    _content.appendChild(lblRow);
+
+    /* ── 물리량 입력 ── */
+    (FIELDS[comp.type]||[]).forEach(function(f){
+      var raw=comp[f.key];if(raw==null) return;
+      var row=document.createElement('div');row.className='pp-row';
+      var k=document.createElement('span');k.className='pp-key';k.textContent=f.label+' ('+f.unit+')';
+
+      /* 현재 값 표시 버튼 — 클릭 시 팝업 열기 */
+      var valBtn=document.createElement('button');
+      valBtn.className='pp-input';
+      valBtn.style.cssText='cursor:pointer;text-align:right;width:90px;padding:3px 8px;'+
+        'font-size:12px;font-family:monospace;font-weight:700;color:#e8f4ff;'+
+        'background:rgba(14,24,50,0.9);border:1px solid #2a5090;border-radius:6px;';
+      function _refreshValBtn(){
+        valBtn.textContent=(comp[f.key]*f.ds).toFixed(f.df)+' '+f.unit;
+      }
+      _refreshValBtn();
+
+      valBtn.addEventListener('click',function(e){
+        e.stopPropagation();
+        App.ValPopup.open({
+          title: f.label+' ('+f.unit+')',
+          value: comp[f.key]*f.ds,
+          step:  f.step||'any',
+          min:   f.min||0,
+          max:   f.max,
+          anchorEl: valBtn,
+          onConfirm: function(v){
+            var clamped=Math.max(f.min||0, f.max?Math.min(f.max,v):v);
+            comp[f.key]=clamped/f.ds;
+            _refreshValBtn();
+            App.Events.emit('state:changed');
+          }
+        });
+      });
+      valBtn.addEventListener('pointerdown',function(e){e.stopPropagation();});
+      row.appendChild(k);row.appendChild(valBtn);_content.appendChild(row);
+    });
+
+    /* ── 연결 정보 ── */
+    if(comp.type!==TYPE.JUNCTION_3&&comp.type!==TYPE.JUNCTION_4){
+      var ports=App.Geo.getCompPorts(comp);
+      var connCount=ports.reduce(function(n,p){return n+App.State.getPortWires(comp.id,p).length;},0);
+      _content.appendChild(_row('연결',connCount>0?connCount+'개 도선':'없음'));
+    }
+
+    /* ── 측정값 ── */
+    var mDiv=document.createElement('div');mDiv.className='pp-measure';
+    var sr=App.State.solverResult;
+    if(sr&&sr.valid){
+      var I=sr.branchCurrents[comp.id], V=sr.componentVoltages[comp.id];
+      var isAC=!!(sr.acPhasor);
+
+      if(isAC){
+        /* ── AC: 피크값 + RMS + 임피던스 ── */
+        var omega=sr.acPhasor.omega;
+        var Ipk=I!=null?Math.abs(I):null;
+        var Vpk=V!=null?Math.abs(V):null;
+        var Irms=Ipk!=null?Ipk/Math.SQRT2:null;
+        var Vrms=Vpk!=null?Vpk/Math.SQRT2:null;
+        mDiv.appendChild(_row('전류(peak)',_fmtCurrent(Ipk)));
+        mDiv.appendChild(_row('전류(RMS)', _fmtCurrent(Irms)));
+        mDiv.appendChild(_row('전압(peak)',_fmtVoltage(Vpk)));
+        mDiv.appendChild(_row('전압(RMS)', _fmtVoltage(Vrms)));
+        /* 임피던스 */
+        var Z=null, Zlabel='임피던스';
+        if(comp.type===TYPE.RESISTOR){
+          Z=comp.value||0; Zlabel='R';
+        } else if(comp.type===TYPE.CAPACITOR){
+          var wC2=omega*(comp.value||0);
+          Z=wC2>1e-15?1/wC2:Infinity; Zlabel='|Z_C|=1/ωC';
+        } else if(comp.type===TYPE.INDUCTOR){
+          Z=omega*(comp.value||0); Zlabel='|Z_L|=ωL';
+        }
+        if(Z!=null&&isFinite(Z))
+          mDiv.appendChild(_row(Zlabel, Z>=1000?(Z/1000).toFixed(3)+' kΩ':Z.toFixed(3)+' Ω'));
+        if(comp.type===TYPE.RESISTOR&&Irms!=null&&Vrms!=null)
+          mDiv.appendChild(_row('소비전력(평균)',_fmtPower(Vrms*Irms)));
+        if((comp.type===TYPE.AC_SOURCE)&&Irms!=null&&Vrms!=null)
+          mDiv.appendChild(_row('공급전력(평균)',_fmtPower(Vrms*Irms)));
+      } else {
+        /* ── DC ── */
+        mDiv.appendChild(_row('전류',_fmtCurrent(I)));
+        mDiv.appendChild(_row('전압강하',_fmtVoltage(V)));
+        if(comp.type===TYPE.RESISTOR&&I!=null&&V!=null)
+          mDiv.appendChild(_row('소비전력',_fmtPower(Math.abs(V*I))));
+        if((comp.type===TYPE.DC_SOURCE||comp.type===TYPE.AC_SOURCE)&&V!=null&&I!=null)
+          mDiv.appendChild(_row('공급전력',_fmtPower(Math.abs(V*I))));
+
+        /* ── 커패시터: 충전량 Q = C·V ── */
+        if(comp.type===TYPE.CAPACITOR){
+          var Vcap=V!=null?Math.abs(V):0;
+          var Ccap=comp.value||0;
+          var Q=Ccap*Vcap;  /* 쿨롱 */
+          var Qstr=_fmtSI(Q,'C');
+          mDiv.appendChild(_row('충전량 Q=CV', Qstr));
+          mDiv.appendChild(_row('+극판 전하', '+'+Qstr));
+          mDiv.appendChild(_row('−극판 전하', '−'+Qstr));
+          mDiv.appendChild(_row('상태',_makeBadge('DC 개방 (정상상태)','#1a4030')));
+
+          /* 병렬 연결된 다른 커패시터 합산 */
+          var nn=sr.componentNodes?sr.componentNodes[comp.id]:null;
+          if(nn){
+            var parallelComps=App.State.components.filter(function(c2){
+              if(c2.id===comp.id||c2.type!==TYPE.CAPACITOR) return false;
+              var nn2=sr.componentNodes[c2.id];
+              if(!nn2) return false;
+              return (nn2[0]===nn[0]&&nn2[1]===nn[1])||(nn2[0]===nn[1]&&nn2[1]===nn[0]);
+            });
+            if(parallelComps.length>0){
+              var Qtotal=Q;
+              parallelComps.forEach(function(c2){
+                var V2=sr.componentVoltages[c2.id]||0;
+                Qtotal+=(c2.value||0)*Math.abs(V2);
+              });
+              mDiv.appendChild(_row('병렬 총 충전량', _fmtSI(Qtotal,'C')));
+              /* 전하 보존 검증: +극판 합 = -극판 합 (크기 동일) → 표시 */
+              mDiv.appendChild(_row('전하 보존',_makeBadge('ΣQ+ = ΣQ−  ✓','#1a3a4a')));
+            }
+          }
+        }
+
+        /* ── 인덕터: 자기장 Φ = L·I, 자기에너지 E = ½LI² ── */
+        if(comp.type===TYPE.INDUCTOR){
+          var Lval=comp.value||0;
+          var Iind=I!=null?Math.abs(I):0;
+          var phi=Lval*Iind;             /* 자속 Φ = L·I (Wb=V·s) */
+          var Emag=0.5*Lval*Iind*Iind;   /* 자기에너지 (J) */
+          mDiv.appendChild(_row('자속 Φ=LI', _fmtSI(phi,'Wb')));
+          mDiv.appendChild(_row('자기에너지 ½LI²', _fmtSI(Emag,'J')));
+          mDiv.appendChild(_row('상태',_makeBadge('DC 단락 (정상상태)','#1a2a50')));
+        }
+      }
+    } else if(sr&&sr.error){
+      var errDiv=document.createElement('div');
+      errDiv.style.cssText='background:rgba(100,20,20,0.30);border:1px solid #5a2020;'+
+        'border-radius:5px;padding:6px 8px;margin-top:2px;color:#f08a8a;font-size:10px;line-height:1.5';
+      errDiv.textContent='⚠ '+sr.error;
+      mDiv.appendChild(errDiv);
+    } else {
+      var hint=document.createElement('div');
+      hint.style.cssText='color:#2d4a60;font-size:10px;text-align:center;padding:3px 0';
+      hint.textContent='— 회로 완성 후 자동 계산 —';mDiv.appendChild(hint);
+    }
+    _content.appendChild(mDiv);
+
+    /* ── 회전 / 삭제 버튼 ── */
+    var isJunction=comp.type===TYPE.JUNCTION_3||comp.type===TYPE.JUNCTION_4;
+    var btns=document.createElement('div');btns.className='pp-btns';
+    if(comp.type!==TYPE.JUNCTION_4){  /* JUNCTION_4만 회전 제외, J3는 허용 */
+      btns.appendChild(_btn('↻ 회전','pp-btn-rotate',function(){
+        App.State.rotateComponent(comp.id);
+        rotInfo.textContent=comp.rotation+'°';
+        show(comp.id);
+      }));
+    }
+    btns.appendChild(_btn('✕ 삭제','pp-btn-delete',function(){
+      var id=App.State.selectedId;if(!id) return;
+      App.State.removeComponent(id);App.EditRenderer.stopSelAnimation();hide();
+    }));
+    _content.appendChild(btns);
+  }
+
+  function _renderWire(wire){
+    _panel.classList.add('visible');_content.innerHTML='';
+
+    /* ── 헤더 ── */
+    var hdr=document.createElement('div');
+    hdr.style.cssText='color:#7ec8f0;font-weight:700;font-size:11px;margin-bottom:8px';
+    hdr.textContent='도선';_content.appendChild(hdr);
+
+    /* ── 연결 정보 ── */
+    var fromComp=App.State.getComponent(wire.fromId);
+    var toComp=App.State.getComponent(wire.toId);
+    if(fromComp&&toComp){
+      _content.appendChild(_row('출발',(LABELS[fromComp.type]||fromComp.type)+' · '+wire.fromPort));
+      _content.appendChild(_row('도착',(LABELS[toComp.type]||toComp.type)+' · '+wire.toPort));
+    }
+
+    /* ── 꺾임 방향 전환 ── */
+    var dirRow=document.createElement('div');dirRow.className='pp-row';
+    var dk=document.createElement('span');dk.className='pp-key';dk.textContent='꺾임 방향';
+    var tb=document.createElement('button');
+    tb.style.cssText='flex:none;padding:3px 10px;font-size:10px;cursor:pointer;font-family:monospace;'+
+                     'border-radius:4px;border:1px solid #1e4060;background:#162535;color:#60a8d8';
+    tb.textContent=wire.direction==='H-first'?'H→V':'V→H';
+    tb.addEventListener('click',function(){
+      wire.direction=wire.direction==='H-first'?'V-first':'H-first';
+      tb.textContent=wire.direction==='H-first'?'H→V':'V→H';
+      App.Events.emit('state:changed');
+    });
+    tb.addEventListener('pointerdown',function(e){e.stopPropagation();});
+    dirRow.appendChild(dk);dirRow.appendChild(tb);_content.appendChild(dirRow);
+
+    /* ── 힌트 ── */
+    var hintEl=document.createElement('div');
+    hintEl.style.cssText='color:#2a4a60;font-size:9px;text-align:center;padding:2px 0 4px';
+    hintEl.textContent='◇ 핸들 탭으로도 방향 전환';_content.appendChild(hintEl);
+
+    /* ── 도선 측정값 ── */
+    var sr2=App.State.solverResult;
+    if(sr2&&sr2.valid){
+      var wMeas=document.createElement('div');wMeas.className='pp-measure';
+      var wireI=(sr2.wireCurrents&&sr2.wireCurrents[wire.id]!=null)
+        ? sr2.wireCurrents[wire.id]
+        : null;
+      wMeas.appendChild(_row('전류', _fmtCurrent(wireI)));
+      _content.appendChild(wMeas);
+    } else if(sr2&&sr2.error){
+      var wErr=document.createElement('div');
+      wErr.style.cssText='color:#f08a8a;font-size:10px;padding:4px 0;text-align:center';
+      wErr.textContent='⚠ '+sr2.error;_content.appendChild(wErr);
+    }
+
+    /* ── 삭제 ── */
+    var btns=document.createElement('div');btns.className='pp-btns';
+    var del=_btn('✕ 도선 삭제','pp-btn-delete',function(){
+      App.State.removeWire(wire.id);App.EditRenderer.stopSelAnimation();hide();
+    });
+    del.style.width='100%';btns.appendChild(del);_content.appendChild(btns);
+  }
+
+  /* 키-값 행 생성.
+   *   val이 문자열/숫자면 textContent, DOM 노드(배지 등)면 appendChild.
+   *   (과거 _makeBadge 결과를 textContent로 넣어 [object HTMLSpanElement]
+   *    표시되던 버그 수정) */
+  function _row(key,val){
+    var row=document.createElement('div');row.className='pp-row';
+    var k=document.createElement('span');k.className='pp-key';k.textContent=key;
+    var v=document.createElement('span');v.className='pp-val';
+    if(val instanceof Node) v.appendChild(val);
+    else v.textContent=val;
+    row.appendChild(k);row.appendChild(v);return row;
+  }
+  function _makeBadge(text,bg){
+    var s=document.createElement('span');
+    s.style.cssText='background:'+bg+';border-radius:3px;padding:1px 5px;font-size:9px;color:#a0d0c0';
+    s.textContent=text;return s;
+  }
+  function _btn(text,cls,onClick){
+    var b=document.createElement('button');b.className='pp-btn '+cls;b.textContent=text;
+    b.addEventListener('click',onClick);b.addEventListener('pointerdown',function(e){e.stopPropagation();});
+    return b;
+  }
+
+  return{init,show,hide,refresh};
+})();
+
+}());

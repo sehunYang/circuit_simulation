@@ -1,0 +1,12 @@
+# 모든 텍스트 파일을 LF 로 통일 (원본 index.html 이 LF 였음)
+* text=auto eol=lf
+
+*.html text eol=lf
+*.css  text eol=lf
+*.js   text eol=lf
+*.md   text eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
