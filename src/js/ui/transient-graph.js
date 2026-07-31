@@ -31,9 +31,16 @@ App.TransientGraph=(function(){
   var _fitData={};
   var _domTau=0;
 
+  /* 과감쇠 2차 곡선의 모드 분해 (수식 라벨용)
+   *   { compId → {F, slow:{A,tau}, fast:{A,tau}|null, peakDev} }
+   *   i(t) = F + A_s·e^{−t/τ_s} (+ A_f·e^{−t/τ_f})
+   *   2차 비진동 경로에서만 채워지며, 항목이 없으면 1차 라벨로 폴백. */
+  var _secondFit={};
+
   /* 전 소자/도선 시변 전류 모델 (비유 모드 재사용용)
-   *   _branchModel = { byComp:{compId:{i0,iinf,tau}}, byWire:{wireId:{i0,iinf,tau}}, domTau }
-   *   각 가지 전류는 i(t) = iinf + (i0−iinf)·e^(−t/τ) (1차 회로 가정). */
+   *   _branchModel = { byComp:{compId:{i0,iinf,tau,s0,sinf}}, byWire, byNode, domTau }
+   *   각 가지 전류는 i(t) = iinf + (i0−iinf)·e^(−t/τ) (1차 지수 모델).
+   *   τ: L·C와 그 인접 도선은 소자별 Thevenin τ, 그 외는 지배 τ 근사. */
   var _branchModel=null;
 
   /* 회로 파라미터 추출 (DC 회로 + 동적 소자 L/C 존재 시에만) */
@@ -55,18 +62,29 @@ App.TransientGraph=(function(){
     return{Req:Req, Vsrc:Vsrc, caps:caps, inds:inds};
   }
 
-  /* ── 과도 응답 수치 해석 (MNA 상태공간 + Crank-Nicolson 사다리꼴 적분) ──
+  /* ── 과도 응답 해석 ─────────────────────────────────────────────────
    *
-   * 토폴로지 자동 감지:
-   *   인덕터(L)·축전기(C)가 같은 노드 쌍 → 병렬 LC, 그 외 → 직렬 RLC
+   * 두 단계 파이프라인:
    *
-   * 상태변수 x = [노드전압 | 인덕터전류 | 전압원전류]
-   *   C_mna·dx/dt + G_mna·x = b   (사다리꼴 적분으로 시간 전진)
+   * (1) 저항성 IC 시스템 두 번 풀기 (L/C를 개방·단락으로 치환한 DC 해석)
+   *     IC_0  (L=개방, C=단락): t=0 초기조건 + V_oc(L), I_0(C)
+   *     IC_inf(L=단락, C=개방): t=∞ 정상상태 + I_inf(L), V_inf(C)
+   *     → 소자별 Thevenin 시상수:
+   *        τ_L = L·I_inf/V_oc  (R_th = V_oc/I_inf)
+   *        τ_C = C·V_inf/I_0   (R_th = V_inf/I_0)
    *
-   * 시정수 τ: Thevenin 공식 (수치 안정)
-   *   τ_L = L·I_inf/V_oc,  τ_C = C·V_inf/I_0
-   * 사후처리: 1패스 배열에서 실제 τ·진폭 역산 → 해석적 지수곡선 재생성
-   *   (사다리꼴 t=0 forward-diff 과대평가로 인한 수직 점프 제거)
+   * (2a) 1차 회로 (L만 또는 C만): 위 값이 곧 정확한 해석해이므로
+   *      곡선을 직접 생성한다.
+   *        L(증가형): i(t) = I_inf·(1 − e^{−t/τ})
+   *        C(감소형): i(t) = I_0·e^{−t/τ}
+   *      같은 종류 소자가 여럿이면 소자별 개방/단락 시상수 근사(OCTC).
+   *
+   * (2b) 2차 회로 (L·C 공존): 단일 지수로 표현 불가(과감쇠 2중 지수
+   *      또는 부족감쇠 진동). MNA 상태공간을 Crank-Nicolson 사다리꼴로
+   *      수치적분해 파형을 그대로 사용하고, 파형에서 극점(α, ω_d)을
+   *      로그 감쇠법으로 추정해 수식 라벨에 쓴다.
+   *      상태변수 x = [노드전압 | 인덕터전류 | 전압원전류]
+   *        C_mna·dx/dt + G_mna·x = b
    * ──────────────────────────────────────────────────────────────────── */
   function _computeTransient(params){
     var V=params.Vsrc;
@@ -74,21 +92,7 @@ App.TransientGraph=(function(){
     var STEPS=1000;
     var result={};
     _branchModel=null;   /* 매 계산마다 초기화 */
-
-    /* ══════════════════════════════════════════════════════════════════
-     * MNA 과도응답 솔버 (완전 독립 IC 기반)
-     *
-     * 시정수 계산 버그 수정:
-     *   버그1: caps.forEach에서 인덱스 k 누락 → 외부 k 사용 → 잘못된 ic_sol 참조
-     *   버그2: τ_L 계산을 bI[ind.id]에 의존 → 0이면 τ≈0 or overflow
-     *
-     * 해결: IC 시스템 두 번 풀기
-     *   IC_0  (L=개방, C=단락): t=0 초기조건 + V_oc(L), I_0(C)
-     *   IC_inf(L=단락, C=개방): t=∞ 정상상태 + I_inf(L), V_inf(C)
-     *
-     *   τ_L = L · I_inf / V_oc   (Thevenin: R_th = V_oc/I_inf)
-     *   τ_C = C · V_inf / I_0    (Thevenin: R_th = V_inf/I_0)
-     * ══════════════════════════════════════════════════════════════════ */
+    _secondFit={};
 
     function mat(n){var m=[];for(var i=0;i<n;i++)m.push(new Float64Array(n));return m;}
     function vec(n){return new Float64Array(n);}
@@ -126,30 +130,38 @@ App.TransientGraph=(function(){
     var cn=sr&&sr.componentNodes;
     var comps=App.State.components;
 
-    /* ── 폴백 ── */
+    /* ── 폴백 (노드 정보 없음): 전 소자 직렬 가정 1차 근사 ──
+     *   1패스: 소자별 τ·진폭 수집 → 공통 시간축(5·τ_max) 확정
+     *   2패스: 공통 축 위에서 소자별 τ로 곡선 생성
+     *   (기존에는 생성 도중 _tMax가 자라 먼저 만든 곡선의 축이 어긋났고,
+     *    show()가 남긴 0.1s 바닥값보다 짧아질 수도 없었다) */
     if(!cn){
-      var Req=params.Req;
+      var Req=Math.max(params.Req,1e-3);
       _fitData={}; _domTau=0;
-      var fbByComp={}, fbByWire={};
+      var fbByComp={};
+      var fbFits=[];
       inds.forEach(function(ind){
-        var R=Math.max(Req,1e-3),L=ind.value||1e-3,tau=L/R,Iinf=V/R;
-        _tMax=Math.max(_tMax,tau*5); _domTau=Math.max(_domTau,tau);
-        _fitData[ind.id]={amp:Iinf, tau:tau, isRising:true};
-        fbByComp[ind.id]={i0:0, iinf:Iinf, tau:tau};
-        var a=new Float32Array(STEPS);
-        for(var k=0;k<STEPS;k++)a[k]=Iinf*(1-Math.exp(-k/(STEPS-1)*_tMax/tau));
-        result[ind.id]=a;
+        var L=ind.value||1e-3, tau=L/Req, Iinf=V/Req;
+        fbFits.push({id:ind.id, tau:tau, amp:Iinf, isRising:true, i0:0, iinf:Iinf});
       });
       caps.forEach(function(cap){
-        var R=Math.max(Req,1e-3),C=cap.value||1e-6,tau=R*C,I0=V/R;
-        _tMax=Math.max(_tMax,tau*5); _domTau=Math.max(_domTau,tau);
-        _fitData[cap.id]={amp:I0, tau:tau, isRising:false};
-        fbByComp[cap.id]={i0:I0, iinf:0, tau:tau};
-        var a=new Float32Array(STEPS);
-        for(var k=0;k<STEPS;k++)a[k]=I0*Math.exp(-k/(STEPS-1)*_tMax/tau);
-        result[cap.id]=a;
+        var C=cap.value||1e-6, tau=Req*C, I0=V/Req;
+        fbFits.push({id:cap.id, tau:tau, amp:I0, isRising:false, i0:I0, iinf:0});
       });
-      _branchModel={byComp:fbByComp, byWire:fbByWire, byNode:null, compNodes:null, domTau:_domTau};
+      fbFits.forEach(function(f){ _domTau=Math.max(_domTau,f.tau); });
+      _tMax=Math.max(5*_domTau,1e-9);
+      _systemPoles={alpha:_domTau>0?1/_domTau:0, omegad:0, isOsc:false};
+      fbFits.forEach(function(f){
+        _fitData[f.id]={amp:f.amp, tau:f.tau, isRising:f.isRising};
+        fbByComp[f.id]={i0:f.i0, iinf:f.iinf, tau:f.tau, s0:f.i0, sinf:f.iinf};
+        var a=new Float32Array(STEPS);
+        for(var k=0;k<STEPS;k++){
+          var t=k/(STEPS-1)*_tMax;
+          a[k]=f.isRising ? f.amp*(1-Math.exp(-t/f.tau)) : f.amp*Math.exp(-t/f.tau);
+        }
+        result[f.id]=a;
+      });
+      _branchModel={byComp:fbByComp, byWire:{}, byNode:null, compNodes:null, domTau:_domTau};
       return result;
     }
 
@@ -257,63 +269,42 @@ App.TransientGraph=(function(){
     var L_ICinf_OFF=nNodes+nVs;
     var solinf=solveIC(true,false);
 
-    /* ── 4. MNA 행렬 스탬프 ── */
-    var G_mna=mat(N),C_mna=mat(N),b_vec=vec(N);
-    comps.forEach(function(c){
-      var nn=cn[c.id];if(!nn)return;
-      var p=nIdx(nn[0]),q=nIdx(nn[1]);
-      if(c.type===TYPE.RESISTOR)  stamp2(G_mna,p,q,c.value>0?1/c.value:1e6);
-      if(c.type===TYPE.CAPACITOR) stamp2(C_mna,p,q,c.value||1e-6);
-    });
-    inds.forEach(function(ind,k){
-      var nn=cn[ind.id];if(!nn)return;
-      var p=nIdx(nn[0]),q=nIdx(nn[1]),ki=L_OFF+k,Lv=ind.value||1e-3;
-      if(p>=0){G_mna[p][ki]-=1;G_mna[ki][p]+=1;}
-      if(q>=0){G_mna[q][ki]+=1;G_mna[ki][q]-=1;}
-      C_mna[ki][ki]+=Lv;
-    });
-    vsrcs.forEach(function(vs,k){
-      var nn=cn[vs.id];if(!nn)return;
-      var p=nIdx(nn[0]),q=nIdx(nn[1]),kv=V_OFF+k;
-      var Vs=vs.type===TYPE.DC_SOURCE?(vs.value||0):0;
-      if(p>=0){G_mna[p][kv]+=1;G_mna[kv][p]+=1;}
-      if(q>=0){G_mna[q][kv]-=1;G_mna[kv][q]-=1;}
-      b_vec[kv]=Vs;
-    });
-
-    /* ── 5. 초기 상태 x ── */
-    var x=vec(N);
-    if(sol0){
-      for(var i=0;i<nNodes;i++) x[i]=sol0[i];
-      for(var k=0;k<nL;k++)     x[L_OFF+k]=0;
-      for(var k=0;k<nVs;k++)    x[V_OFF+k]=sol0[nNodes+k];
-    }
-
-    /* ── 6. τ 추정 — Thevenin 공식 ─────────────────────────────────
+    /* ── 4. 소자별 Thevenin 1차 모델 (τ·진폭) ──────────────────────
      *
-     * τ_L = L · I_inf / V_oc
-     *   V_oc: IC_0(L=개방)에서 L 단자 개방전압 (sol0 에서 직접 읽음)
-     *   I_inf: IC_inf(L=단락)에서 인덕터 단락전류
+     * τ_L = L · I_inf / V_oc   (R_th = V_oc/I_inf,  τ = L/R_th)
+     *   V_oc : IC_0 (L=개방)에서 L 단자 개방전압
+     *   I_inf: IC_inf(L=단락)에서 인덕터 단락전류 = 정상상태 전류
+     * τ_C = C · V_inf / I_0    (R_th = V_inf/I_0,  τ = R_th·C)
+     *   I_0  : IC_0 (C=단락)에서 C 단락전류 = 초기 충전전류
+     *   V_inf: IC_inf(C=개방)에서 C 양단 개방전압 = 정상상태 전압
      *
-     * τ_C = C · V_inf / I_0
-     *   V_inf: IC_inf(C=개방)에서 C 양단 전압
-     *   I_0: IC_0(C=단락)에서 C 단락전류 = sol0[C_IC0_OFF+k]
-     *
-     * 이 공식은 회로 복잡도와 무관하게 수치적으로 완전히 안정합니다.
-     * dt_try 기반 수치 미분 방법은 C_mna/dt_try 조건수 폭발로 인해
-     * 수치 불안정 (예: C=100pF, R=100Ω → dt_try=0.1ns, C/dt=1e3 → ill-conditioned)
+     * 동적 소자가 1개면 이 τ가 곧 정확한 해석해(1차 회로).
+     * 같은 종류가 여럿이면 소자별 개방/단락 시상수(OCTC) 근사가 된다.
+     * (dt 기반 수치 미분은 C/dt 조건수 폭발로 불안정 — Thevenin 공식 고정)
      * ──────────────────────────────────────────────────────────────── */
-    var tauMax=1e-9;
+    var elemFit={};   /* compId → {tau, amp, isRising} */
+
+    /* 개방 근사 한계: solveIC 의 '개방'은 G_OPEN=1e-9 S(1GΩ) 저항 근사라
+     *   완전 개방 회로에서도 ~nA 누설전류가 계산된다. Thevenin 저항이
+     *   이 한계(0.1/G_OPEN)를 넘으면 물리적 개방(전류 없음)으로 판정한다.
+     *   (예: 직렬 RLC 에서 C 의 I_0: L 개방이 전류를 막아 실제 0인데,
+     *    누설 12nA 가 가드를 통과하면 τ_C = C·1GΩ = 10⁵s 가 되는 병리) */
+    var R_OPEN_LIMIT=0.1/1e-9;   /* = 1e8 Ω */
 
     inds.forEach(function(ind,k){
       var nn=cn[ind.id];if(!nn)return;
       var p=nIdx(nn[0]),q=nIdx(nn[1]);
       var V_oc=sol0?Math.abs((p>=0?sol0[p]:0)-(q>=0?sol0[q]:0)):0;
       var I_inf=solinf?Math.abs(solinf[L_ICinf_OFF+k]||0):0;
-      var tau;
-      if(V_oc>1e-12&&I_inf>1e-15) tau=(ind.value||1e-3)*I_inf/V_oc;
-      else tau=(ind.value||1e-3)/Math.max(params.Req,1);
-      tauMax=Math.max(tauMax,tau*5);
+      var L=ind.value||1e-3;
+      var tau, amp;
+      if(V_oc>1e-12&&I_inf>1e-15&&(V_oc/I_inf)<R_OPEN_LIMIT){
+        tau=L*I_inf/V_oc; amp=I_inf;              /* R_th = V_oc/I_inf */
+      } else {
+        tau=L/Math.max(params.Req,1);             /* 직렬 근사 폴백 */
+        amp=0;                                    /* 개방/누설 판정 → 전류 없음 */
+      }
+      elemFit[ind.id]={tau:tau, amp:amp, isRising:true};
     });
 
     caps.forEach(function(cap,k){
@@ -321,36 +312,57 @@ App.TransientGraph=(function(){
       var p=nIdx(nn[0]),q=nIdx(nn[1]);
       var I_0=sol0?Math.abs(sol0[C_IC0_OFF+k]||0):0;
       var V_inf=solinf?Math.abs((p>=0?solinf[p]:0)-(q>=0?solinf[q]:0)):0;
-      var tau;
-      if(I_0>1e-15&&V_inf>1e-12) tau=(cap.value||1e-6)*V_inf/I_0;
-      else tau=Math.max(params.Req,1)*(cap.value||1e-6);
-      tauMax=Math.max(tauMax,tau*5);
+      var C=cap.value||1e-6;
+      var tau, amp;
+      if(I_0>1e-15&&V_inf>1e-12&&(V_inf/I_0)<R_OPEN_LIMIT){
+        tau=C*V_inf/I_0; amp=I_0;                 /* R_th = V_inf/I_0 */
+      } else {
+        tau=Math.max(params.Req,1)*C;             /* 직렬 근사 폴백 */
+        amp=0;                                    /* 개방/누설 판정 → 전류 없음 */
+      }
+      elemFit[cap.id]={tau:tau, amp:amp, isRising:false};
     });
 
-    /* RLC 공진 주기도 고려 */
-    if(nL>0&&nC>0){
+    /* 지배(최대) 시상수 — 전류가 실제로 흐르는 소자 우선 */
+    var domTau=0, anyTau=0;
+    Object.keys(elemFit).forEach(function(id){
+      var f=elemFit[id];
+      if(!(f.tau>1e-15&&isFinite(f.tau))) return;
+      anyTau=Math.max(anyTau,f.tau);
+      if(f.amp>1e-15) domTau=Math.max(domTau,f.tau);
+    });
+    if(!(domTau>0)) domTau=anyTau>0?anyTau:Math.max(params.Req,1)*1e-6;
+
+    /* 시간축: 5·τ_dom. L·C 공존(2차)이면 공진 주기(≈3주기분)도 포함 */
+    var isSecondOrder=(nL>0&&nC>0);
+    var span=5*domTau;
+    if(isSecondOrder){
       var Ltot=inds.reduce(function(s,l){return s+(l.value||0);},0)||1e-3;
       var Ctot=1/caps.reduce(function(s,c){return s+1/(c.value||1e-6);},0);
-      tauMax=Math.max(tauMax,20*Math.sqrt(Ltot*Ctot));
+      span=Math.max(span,20*Math.sqrt(Ltot*Ctot));
     }
-
-    _tMax=tauMax;
-    var dt=_tMax/STEPS;
+    _tMax=span;
+    _domTau=domTau;
+    _fitData=elemFit;
+    _systemPoles={alpha:domTau>0?1/domTau:0, omegad:0, isOsc:false};
 
     /* ══════════════════════════════════════════════════════════════════
-     * 전 소자/도선 시변 전류 모델 구축 (비유 모드 재사용)
+     * ── 5. 전 소자/도선/노드 시변 모델 구축 (비유 모드 재사용) ──
      *   sol0  : t=0  (L 개방, C 단락) 노드전압 + 전원전류 + C단락전류
      *   solinf: t=∞ (L 단락, C 개방) 노드전압 + 전원전류 + L단락전류
-     *   각 가지: i(t) = iinf + (i0 − iinf)·e^{−t/τ_dom}
+     *   각 가지: i(t) = iinf + (i0 − iinf)·e^{−t/τ}
+     *   τ: L·C는 소자별 Thevenin τ(1차 회로에서 정확),
+     *      그 외 가지·노드는 여러 모드의 중첩이라 τ_dom 단일 지수 근사.
      * ══════════════════════════════════════════════════════════════════ */
     (function(){
-      var domTau=tauMax/5;   // tauMax=5·domTau
-      if(!(domTau>1e-15)) domTau=Math.max(params.Req,1)*1e-6;
       var byComp={}, byWire={};
 
       function nodeVolt(sol,node){ var i=nIdx(node); return (i>=0&&sol)?sol[i]:0; }
 
-      /* 저항: i = (Vp − Vq)/R, 전원: 전압원 전류, L: i0=0·iinf=단락전류, C: i0=단락전류·iinf=0 */
+      /* 소자별 부호 있는 i0·iinf — ports[0]→ports[1] 방향이 양(+).
+       *   저항: i=(Vp−Vq)/R, 전원: MNA 보조 미지수,
+       *   L: i0=0·iinf=단락전류, C: i0=단락전류·iinf=0.
+       *   s0/sinf는 같은 값의 별칭(도선 방향 결정용 부호 보존본). */
       comps.forEach(function(c){
         var nn=cn[c.id]; if(!nn) return;
         var i0=0, iinf=0;
@@ -370,11 +382,12 @@ App.TransientGraph=(function(){
           i0=(kC>=0&&sol0)?(sol0[C_IC0_OFF+kC]||0):0;
           iinf=0;  /* t=∞ 커패시터 전류=0 */
         }
-        byComp[c.id]={i0:i0, iinf:iinf, tau:domTau};
+        var tau=(elemFit[c.id]&&elemFit[c.id].tau>1e-15)?elemFit[c.id].tau:domTau;
+        byComp[c.id]={i0:i0, iinf:iinf, tau:tau, s0:i0, sinf:iinf};
       });
 
       /* ── 노드별 시변 전위 모델 (#3) ──
-       *   v_node(t) = vinf + (v0 − vinf)·e^{−t/τ}
+       *   v_node(t) = vinf + (v0 − vinf)·e^{−t/τ_dom}
        *   sol0/solinf 의 노드전압을 그대로 사용. 그라운드(node 0)=0V 고정. */
       var byNode={};
       var maxNodeId=0;
@@ -386,51 +399,96 @@ App.TransientGraph=(function(){
 
       /* 도선: 양 끝 소자 중 전류를 아는 쪽으로 i(t) 결정 (부호 보존, #2).
        *   부호 기준: fromPort→toPort 가 양(+). 연결 소자의 부호 있는 i0/iinf 를
-       *   도선 방향에 맞춰 변환한다. */
+       *   도선 방향에 맞춰 변환한다. τ도 기준 소자의 τ를 따른다
+       *   (C 옆 도선은 τ_C 로 감쇠 — 지배 τ만 쓰면 빠른 가지가 느리게 보임).
+       *   refPortIdx: 도선이 붙은 소자 포트의 순서(0/1). 소자 부호전류 s0는
+       *   ports[0]→ports[1] 가 +. 도선이 ports[1]에 붙으면 전류가 소자에서
+       *   도선으로 나가는(+) 방향이 도선 from→to 와 정렬됨(refIsFrom 고려). */
       App.State.wires.forEach(function(w){
         var fromComp=App.State.getComponent(w.fromId);
         var toComp=App.State.getComponent(w.toId);
         var isJ=function(cc){return cc&&(cc.type===TYPE.JUNCTION_3||cc.type===TYPE.JUNCTION_4);};
-        /* 기준 소자(전류를 아는 쪽) 선택: 분기점이 아닌 쪽 우선 */
         var refId=null, refIsFrom=true, refPort=null;
         if(!isJ(fromComp) && byComp[w.fromId]){ refId=w.fromId; refIsFrom=true; refPort=w.fromPort; }
         else if(!isJ(toComp) && byComp[w.toId]){ refId=w.toId; refIsFrom=false; refPort=w.toPort; }
         if(!refId){ byWire[w.id]={i0:0,iinf:0,tau:domTau,signed:false}; return; }
         var rc=byComp[refId];
-        /* refPortIdx: 도선이 붙은 소자 포트의 순서(0/1). 소자 부호전류 s0는
-         *   ports[0]→ports[1] 가 +. 도선이 ports[1]에 붙으면 전류가 소자에서
-         *   도선으로 나가는(+) 방향이 도선 from→to 와 정렬됨(refIsFrom 고려). */
         var refComp=App.State.getComponent(refId);
         var refPorts=App.Geo.getCompPorts(refComp);
         var refPortIdx=refPorts.indexOf(refPort);
-        byWire[w.id]={ i0:Math.abs(rc.i0), iinf:Math.abs(rc.iinf), tau:domTau,
+        byWire[w.id]={ i0:Math.abs(rc.i0), iinf:Math.abs(rc.iinf), tau:rc.tau,
                        refId:refId, refIsFrom:refIsFrom, refPortIdx:refPortIdx };
-      });
-
-      /* 소자 전류 부호 보존본 (도선 방향 결정용) */
-      comps.forEach(function(c){
-        var nn=cn[c.id]; if(!nn) return;
-        var s0=0, sinf=0;
-        if(c.type===TYPE.RESISTOR){
-          var R=c.value>0?c.value:1e-6;
-          s0  =(nodeVolt(sol0,nn[0])  -nodeVolt(sol0,nn[1])) /R;
-          sinf=(nodeVolt(solinf,nn[0])-nodeVolt(solinf,nn[1]))/R;
-        } else if(c.type===TYPE.DC_SOURCE||c.type===TYPE.AC_SOURCE){
-          var kv=vsrcs.indexOf(c);
-          if(kv>=0){ s0=sol0?(sol0[nNodes+kv]||0):0; sinf=solinf?(solinf[nNodes+kv]||0):0; }
-        } else if(c.type===TYPE.INDUCTOR){
-          var kL=inds.indexOf(c);
-          sinf=(kL>=0&&solinf)?(solinf[L_ICinf_OFF+kL]||0):0;
-        } else if(c.type===TYPE.CAPACITOR){
-          var kC=caps.indexOf(c);
-          s0=(kC>=0&&sol0)?(sol0[C_IC0_OFF+kC]||0):0;
-        }
-        byComp[c.id].s0=s0; byComp[c.id].sinf=sinf;   // 부호 있는 전류
       });
 
       _branchModel={ byComp:byComp, byWire:byWire, byNode:byNode,
                      compNodes:cn, domTau:domTau };
     })();
+    /* ══════════════════════════════════════════════════════════════════
+     * ── 6. 1차 회로 (L만 또는 C만): 해석적 곡선 생성 ──
+     *   Thevenin τ·진폭이 곧 정확한 해석해이므로 수치적분이 불필요하다.
+     *   (기존: CN 적분 → 고정점 2점 로그 핏 → 지수 재생성 — 같은 물리를
+     *    3중 계산했고, 시상수가 크게 다른 소자가 섞이면 빠른 소자의 핏이
+     *    수치 언더플로로 실패해 지배 τ로 잘못 대체되는 오류가 있었다)
+     * ══════════════════════════════════════════════════════════════════ */
+    if(!isSecondOrder){
+      var mkCurve=function(f){
+        var arr=new Float32Array(STEPS);
+        for(var k=0;k<STEPS;k++){
+          var t=k/(STEPS-1)*_tMax;
+          arr[k]=f.isRising ? f.amp*(1-Math.exp(-t/f.tau))
+                            : f.amp*Math.exp(-t/f.tau);
+        }
+        return arr;
+      };
+      inds.concat(caps).forEach(function(c){
+        var f=elemFit[c.id]; if(!f) return;
+        if(!(f.tau>1e-15&&isFinite(f.tau))) f.tau=domTau;
+        result[c.id]=mkCurve(f);
+      });
+      return result;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
+     * ── 7. 2차 회로 (L·C 공존): MNA + Crank-Nicolson 수치적분 ──
+     *   2차 응답(과감쇠 2중 지수·부족감쇠 진동)은 단일 지수로 표현될 수
+     *   없으므로 수치 파형을 그대로 그래프에 사용한다.
+     *   (기존의 지수 재생성은 부족감쇠 진동을 지워버리는 오류였다)
+     * ══════════════════════════════════════════════════════════════════ */
+    var dt=_tMax/STEPS;
+    var G_mna=mat(N),C_mna=mat(N),b_vec=vec(N);
+    comps.forEach(function(c){
+      var nn=cn[c.id];if(!nn)return;
+      var p=nIdx(nn[0]),q=nIdx(nn[1]);
+      if(c.type===TYPE.RESISTOR)  stamp2(G_mna,p,q,c.value>0?1/c.value:1e6);
+      if(c.type===TYPE.CAPACITOR) stamp2(C_mna,p,q,c.value||1e-6);
+    });
+    inds.forEach(function(ind,k){
+      var nn=cn[ind.id];if(!nn)return;
+      var p=nIdx(nn[0]),q=nIdx(nn[1]),ki=L_OFF+k,Lv=ind.value||1e-3;
+      /* 전류 변수 i_k: nn[1]→nn[0] 방향이 +.
+       *   가지행 ki: L·di/dt + v_p − v_q = 0, 노드행: p에 −i_k, q에 +i_k */
+      if(p>=0){G_mna[p][ki]-=1;G_mna[ki][p]+=1;}
+      if(q>=0){G_mna[q][ki]+=1;G_mna[ki][q]-=1;}
+      C_mna[ki][ki]+=Lv;
+    });
+    vsrcs.forEach(function(vs,k){
+      var nn=cn[vs.id];if(!nn)return;
+      var p=nIdx(nn[0]),q=nIdx(nn[1]),kv=V_OFF+k;
+      var Vs=vs.type===TYPE.DC_SOURCE?(vs.value||0):0;
+      if(p>=0){G_mna[p][kv]+=1;G_mna[kv][p]+=1;}
+      if(q>=0){G_mna[q][kv]-=1;G_mna[kv][q]-=1;}
+      b_vec[kv]=Vs;
+    });
+
+    /* 초기 상태: t=0 해 (C 단락 노드전압, i_L=0) */
+    var x=vec(N);
+    if(sol0){
+      for(var i5=0;i5<nNodes;i5++) x[i5]=sol0[i5];
+      for(var k5=0;k5<nL;k5++)     x[L_OFF+k5]=0;
+      for(var k6=0;k6<nVs;k6++)    x[V_OFF+k6]=sol0[nNodes+k6];
+    }
+
+    /* 대수 행(미분항 없는 행)은 사다리꼴 평균 대신 현재 시점 방정식 사용 */
     var isAlg=new Uint8Array(N);
     for(var i=0;i<N;i++){
       var hasC=false;
@@ -448,146 +506,187 @@ App.TransientGraph=(function(){
       }
     }
 
-    /* ── 9. 전류 배열 초기화 ── */
     var iL_arrs=inds.map(function(ind){return{id:ind.id,arr:new Float32Array(STEPS)};});
-    var iC_arrs=caps.map(function(cap,k){
+    var iC_arrs=caps.map(function(cap){
       return{id:cap.id,arr:new Float32Array(STEPS),nn:cn[cap.id],Cv:cap.value||1e-6};
     });
 
-    /* ── 10. 적분 루프 ── */
+    /* ── 적분 루프 ── */
     var xp=new Float64Array(x);
     for(var step=0;step<STEPS;step++){
 
-      /* 인덕터 전류: 현재 상태(xp) 기록 */
-      for(var k=0;k<nL;k++) iL_arrs[k].arr[step]=Math.abs(xp[L_OFF+k]);
+      /* 인덕터 전류 — ports[0]→ports[1] 방향으로 부호 변환(−x).
+       *   부족감쇠 진동은 0을 교차하므로 절댓값을 취하면 파형이 접힌다. */
+      for(var k=0;k<nL;k++) iL_arrs[k].arr[step]=-xp[L_OFF+k];
 
-      /* 다음 상태 계산 */
       var rhs=matvec(B_mat,xp);
       for(var i=0;i<N;i++)rhs[i]+=b_vec[i];
       var xn=solve(A_mat,rhs);
       if(!xn)break;
 
-      /* 커패시터 전류: i_C = C · Δv / dt
-       * step=0: arr[0] = forward diff (t=0의 실제 초기전류)
-       *         arr[1] 은 아래 backward diff로 기록
-       * step>0: arr[step+1] = backward diff */
+      /* 커패시터 전류 i_C = C·Δv/dt (부호 유지)
+       * step=0: forward diff = t=0⁺ 초기전류로 arr[0]·arr[1]을 채워 연속 */
       iC_arrs.forEach(function(ci){
         var nn=ci.nn;if(!nn)return;
         var p=nIdx(nn[0]),q=nIdx(nn[1]);
         var dvn=(p>=0?xn[p]:0)-(q>=0?xn[q]:0);
         var dvp=(p>=0?xp[p]:0)-(q>=0?xp[q]:0);
-        var iC=Math.abs(ci.Cv*(dvn-dvp)/dt);
-        if(step===0){
-          /* t=0 초기값: forward diff v[1]-v[0] 은 첫 스텝의 변화량
-           * = 실제 i_C(0+). arr[0]과 arr[1] 모두 동일 값으로 초기화하면
-           * 연속적으로 보임 */
-          ci.arr[0]=iC;
-        }
+        var iC=ci.Cv*(dvn-dvp)/dt;
+        if(step===0) ci.arr[0]=iC;
         if(step+1<STEPS) ci.arr[step+1]=iC;
       });
 
       xp=xn;
     }
 
-    /* ── 11. 결과 수집 ── */
-    iL_arrs.forEach(function(o){result[o.id]=o.arr;});
-    iC_arrs.forEach(function(o){result[o.id]=o.arr;});
-
-    /* ── 12. 사후처리: τ·진폭 추출 → 해석적 곡선 재생성 ──────────────
-     *
-     * 사다리꼴 수치적분은 t=0 첫 스텝에서 forward-diff 과대평가로
-     * arr[0]이 실제 곡선보다 크게 나와 수직 점프(급강하/급상승)를 만듦.
-     *
-     * 해결: 1패스 배열에서 실제 τ와 진폭을 역산한 뒤,
-     *   각 소자를 1차 지수 곡선으로 해석적으로 재생성.
-     *     증가형(RL):  i(t) = I_inf·(1 - e^{-t/τ})
-     *     감소형(RC):  i(t) = I_0·e^{-t/τ}
-     *
-     * τ 역산: 안정 구간 두 점 t1=0.2T, t2=0.6T (T=1패스 _tMax)
-     *   증가형: τ = (t2-t1)/ln((I_inf-i1)/(I_inf-i2))
-     *   감소형: τ = (t2-t1)/ln(i1/i2)
-     * 진폭 역산: 여러 점에서 e 보정 후 평균 (노이즈 완화)
-     * ──────────────────────────────────────────────────────────────── */
-    var _tMaxPass1=_tMax;  /* 1패스 시간축 보존 */
-    var allArrs=iL_arrs.concat(iC_arrs);
-
-    /* 각 소자별 τ, 진폭, 방향 추출 */
-    var fits=allArrs.map(function(o){
-      var arr=o.arr, Nf=arr.length;
-      var Iend=arr[Nf-1];
-      var peak=0;
-      for(var ki=0;ki<Nf;ki++) if(Math.abs(arr[ki])>Math.abs(peak)) peak=arr[ki];
-      var isRising=Math.abs(Iend)>Math.abs(peak)*0.5;
-
-      var k1=Math.round(Nf*0.2), k2=Math.round(Nf*0.6);
-      var t1=k1/(Nf-1)*_tMaxPass1, t2=k2/(Nf-1)*_tMaxPass1;
-      var i1=Math.abs(arr[k1]), i2=Math.abs(arr[k2]);
-      var Ie=Math.abs(Iend);
-
-      var tau=0;
-      if(isRising){
-        var r1=Ie-i1, r2=Ie-i2;
-        if(r1>1e-30&&r2>1e-30&&r1>r2) tau=(t2-t1)/Math.log(r1/r2);
-      } else {
-        if(i1>1e-30&&i2>1e-30&&i1>i2) tau=(t2-t1)/Math.log(i1/i2);
-      }
-
-      return {o:o, tau:tau, isRising:isRising, Nf:Nf};
+    /* 표시 방향 정규화: 정상값(0이면 초기값)이 음수면 곡선 전체 부호 반전.
+     *   그래프의 관심사는 크기·형태이고 기준 방향은 소자 배치에 따라
+     *   임의로 뒤집힐 수 있으므로 양(+) 위주로 정렬한다. */
+    function canonicalize(arr){
+      var refV=arr[arr.length-1];
+      if(Math.abs(refV)<1e-15) refV=arr[0];
+      if(refV<0){ for(var k=0;k<arr.length;k++) arr[k]=-arr[k]; }
+    }
+    var poleRef=null, poleDev=0;
+    iL_arrs.concat(iC_arrs).forEach(function(o){
+      canonicalize(o.arr);
+      result[o.id]=o.arr;
+      /* 극점 추정 기준: 최종값 대비 편차가 가장 큰 파형 */
+      var fin=o.arr[o.arr.length-1], dev=0;
+      for(var k=0;k<o.arr.length;k++){var d=Math.abs(o.arr[k]-fin);if(d>dev)dev=d;}
+      if(dev>poleDev){poleDev=dev;poleRef=o.arr;}
     });
 
-    /* dominant τ (가장 느린 소자 기준으로 시간축 결정) */
-    var dominantTau=0;
-    fits.forEach(function(f){ if(f.tau>1e-30&&isFinite(f.tau)) dominantTau=Math.max(dominantTau,f.tau); });
+    /* ── 8. 파형에서 극점(α, ω_d) 추정 → 수식 라벨 ── */
+    var poles=poleRef?_estimatePoles(poleRef,_tMax):null;
+    if(poles) _systemPoles=poles;
 
-    /* 비유 모드 재사용 데이터 초기화 */
-    _fitData={}; _domTau=dominantTau;
-
-    if(dominantTau>1e-15){
-      _tMax=dominantTau*5;
-      dt=_tMax/STEPS;
-      _systemPoles={alpha:1/dominantTau, omegad:0, isOsc:false};
-
-      /* 각 소자 해석적 재생성 */
-      fits.forEach(function(f){
-        var arr=f.o.arr, Nf=f.Nf;
-        var tau=(f.tau>1e-30&&isFinite(f.tau))?f.tau:dominantTau;
-
-        /* 진폭 추출: 안정 구간 여러 점에서 e 보정 후 평균 */
-        var amp=0, cnt=0;
-        var kStart=Math.round(Nf*0.1), kEnd=Math.round(Nf*0.6);
-        for(var kk=kStart;kk<=kEnd;kk++){
-          var tt=kk/(Nf-1)*_tMaxPass1;
-          var v=Math.abs(arr[kk]);
-          if(f.isRising){
-            var d=1-Math.exp(-tt/tau);
-            if(d>1e-6){ amp+=v/d; cnt++; }
-          } else {
-            amp+=v*Math.exp(tt/tau); cnt++;
-          }
-        }
-        amp=cnt>0?amp/cnt:Math.abs(arr[Nf-1]);
-
-        /* 비유 모드용 핏 데이터 저장 */
-        _fitData[f.o.id]={amp:amp, tau:tau, isRising:f.isRising};
-
-        /* 새 시간축으로 해석적 곡선 생성 */
-        var newArr=new Float32Array(Nf);
-        for(var k=0;k<Nf;k++){
-          var t=k/(Nf-1)*_tMax;
-          newArr[k]=f.isRising
-            ? amp*(1-Math.exp(-t/tau))
-            : amp*Math.exp(-t/tau);
-        }
-        f.o.arr=newArr;
+    /* ── 9. 과감쇠 2모드 분해 (라벨용) ──
+     *   비진동 2차 곡선은 단일 지수가 아니라 두 시상수의 합이다
+     *   (예: L 가지가 켜지며 생기는 초기 급강하 + C 충전의 완만한 감쇠).
+     *   곡선별로 분해를 시도하고, 성공 항목만 2항/꼬리 라벨로 쓴다. */
+    if(!_systemPoles.isOsc){
+      iL_arrs.concat(iC_arrs).forEach(function(o){
+        var m2=_fitTwoMode(o.arr,_tMax);
+        if(m2) _secondFit[o.id]=m2;
       });
-
-      /* 결과 갱신 */
-      result={};
-      iL_arrs.forEach(function(o){result[o.id]=o.arr;});
-      iC_arrs.forEach(function(o){result[o.id]=o.arr;});
     }
 
     return result;
+  }
+
+  /* ── 과감쇠 2차 파형의 2모드 분해 ────────────────────────────────────
+   *   i(t) = F + A_s·e^{−t/τ_s} + A_f·e^{−t/τ_f}   (A 는 부호 포함)
+   *   ① 꼬리 구간(0.35T~0.75T)을 로그-선형 최소제곱 핏 → 느린 모드
+   *   ② 잔차 r(t) = i − F − A_s·e^{−t/τ_s} 의 초기 구간 → 빠른 모드
+   *   빠른 모드는 진폭이 유의미(피크 편차의 5% 이상)하고 시상수가
+   *   분리(τ_f < τ_s/3)될 때만 채택. 그 외에는 느린 모드만 반환하고,
+   *   꼬리 핏 자체가 실패하면 null(호출부가 1차 라벨로 폴백). */
+  function _fitTwoMode(arr, span){
+    var N=arr.length; if(N<20) return null;
+    var Fend=arr[N-1];
+    var peakDev=0;
+    for(var k=0;k<N;k++){var dd=Math.abs(arr[k]-Fend);if(dd>peakDev)peakDev=dd;}
+    if(!(peakDev>1e-15)) return null;
+
+    /* ① 느린 모드 τ_s: 꼬리 차분(differencing) 로그-선형 최소제곱.
+     *   D[k] = arr[k] − arr[k+m] = A_s·e^{−t_k/τ_s}·(1−e^{−mΔt/τ_s})
+     *   차분은 상수항(최종값 F)을 소거하므로, 시간축이 완전 수렴 전에
+     *   끝나 arr[N−1]≠F 여도 τ_s 추정이 편향되지 않는다. */
+    var k1=Math.round(N*0.35), k2=Math.round(N*0.75);
+    var m=Math.max(2,Math.round((k2-k1)/6));
+    var sgn=0,n=0,Sx=0,Sy=0,Sxx=0,Sxy=0;
+    for(var ka=k1;ka+m<=k2;ka++){
+      var D=arr[ka]-arr[ka+m];
+      if(Math.abs(D)<peakDev*1e-5) break;               /* 수치 바닥 도달 */
+      var s=D>=0?1:-1;
+      if(sgn===0) sgn=s; else if(s!==sgn) return null;  /* 부호 교차 → 비단조 */
+      var t=ka/(N-1)*span, y=Math.log(Math.abs(D));
+      Sx+=t; Sy+=y; Sxx+=t*t; Sxy+=t*y; n++;
+    }
+    if(n<8) return null;
+    var den=n*Sxx-Sx*Sx; if(Math.abs(den)<1e-30) return null;
+    var slope=(n*Sxy-Sx*Sy)/den;
+    if(!(slope<0)) return null;
+    var taus=-1/slope;
+    if(!(isFinite(taus)&&taus>0&&taus<span*4)) return null;
+
+    /* ② F·A_s 동시 추정: 꼬리에서 arr ≈ F + A_s·u (u=e^{−t/τ_s}) 선형 회귀 */
+    var n3=0,Su=0,Suu=0,Sv=0,Suv=0;
+    for(var kc=k1;kc<=k2;kc++){
+      var t3=kc/(N-1)*span, u=Math.exp(-t3/taus), v=arr[kc];
+      Su+=u; Suu+=u*u; Sv+=v; Suv+=u*v; n3++;
+    }
+    var den3=n3*Suu-Su*Su; if(Math.abs(den3)<1e-30) return null;
+    var As=(n3*Suv-Su*Sv)/den3;
+    var F=(Sv-As*Su)/n3;
+    if(!(isFinite(As)&&isFinite(F))) return null;
+
+    /* ② 빠른 모드: 잔차 초기 구간 핏
+     *   잔차는 느린 모드 핏 오차(≈일정 오프셋)에 오염되므로, 잔차가 충분히
+     *   큰 초기부(|r| ≥ 20%·|r₀|)만 사용해 기울기 편향을 줄인다.
+     *   kb=0 은 CN forward-diff 표본(≈t=dt/2 평균)이라 제외. */
+    var fast=null;
+    var r0=arr[0]-F-As;
+    if(Math.abs(r0)>peakDev*0.05){
+      var sgn2=r0>=0?1:-1,n2=0,Sx2=0,Sy2=0,Sxx2=0,Sxy2=0;
+      for(var kb=1;kb<k1;kb++){
+        var t2=kb/(N-1)*span;
+        var r=arr[kb]-F-As*Math.exp(-t2/taus);
+        if((r>=0?1:-1)!==sgn2) break;
+        if(Math.abs(r)<Math.abs(r0)*0.2) break;         /* 오염 구간 제외 */
+        var y2=Math.log(Math.abs(r));
+        Sx2+=t2; Sy2+=y2; Sxx2+=t2*t2; Sxy2+=t2*y2; n2++;
+      }
+      if(n2>=4){
+        var den2=n2*Sxx2-Sx2*Sx2;
+        if(Math.abs(den2)>1e-30){
+          var slope2=(n2*Sxy2-Sx2*Sy2)/den2;
+          if(slope2<0){
+            var tauf=-1/slope2;
+            var Af=sgn2*Math.exp((Sy2-slope2*Sx2)/n2);
+            if(isFinite(tauf)&&tauf>0&&tauf<taus/3&&isFinite(Af))
+              fast={A:Af,tau:tauf};
+          }
+        }
+      }
+    }
+    return {F:F, slow:{A:As,tau:taus}, fast:fast, peakDev:peakDev};
+  }
+
+  /* ── 2차 응답 파형의 극점 추정 (로그 감쇠법) ─────────────────────────
+   *   부족감쇠: 연속 극값 간격 = 반주기 T_d/2 → ω_d = π/Δt,
+   *             극값 진폭비 → α = ln(A₁/A₂)/Δt  (감쇠 포락선 e^{−αt})
+   *   과감쇠(내부 극값 없음): 꼬리 구간 두 점의 지수 감쇠율로
+   *             지배(느린) 극점만 추정. */
+  function _estimatePoles(arr, span){
+    var N=arr.length; if(N<8) return null;
+    var fin=arr[N-1];
+    var peakDev=0;
+    for(var k=0;k<N;k++){var d=Math.abs(arr[k]-fin);if(d>peakDev)peakDev=d;}
+    if(!(peakDev>1e-15)) return null;
+    /* 내부 극값 수집 — 최종값 기준 편차의 2% 미만은 수치 잡음으로 무시 */
+    var ext=[];
+    for(var k2=1;k2<N-1;k2++){
+      var d0=arr[k2-1]-fin, d1=arr[k2]-fin, d2=arr[k2+1]-fin;
+      if((d1-d0)*(d2-d1)<0 && Math.abs(d1)>peakDev*0.02)
+        ext.push({t:k2/(N-1)*span, a:Math.abs(d1)});
+    }
+    if(ext.length>=2 && ext[1].a>1e-30){
+      var half=ext[1].t-ext[0].t;   /* 연속 극값(마루→골) 간격 = 반주기 */
+      if(half>0){
+        var alpha=Math.log(ext[0].a/ext[1].a)/half;
+        return {alpha:Math.max(alpha,0), omegad:Math.PI/half, isOsc:true};
+      }
+    }
+    /* 과감쇠: 꼬리 감쇠율 (느린 극점이 지배하는 구간) */
+    var k3=Math.round(N*0.3), k4=Math.round(N*0.7);
+    var e1=Math.abs(arr[k3]-fin), e2=Math.abs(arr[k4]-fin);
+    if(e1>1e-30&&e2>1e-30&&e1>e2){
+      var a2=Math.log(e1/e2)/((k4-k3)/(N-1)*span);
+      return {alpha:a2, omegad:0, isOsc:false};
+    }
+    return null;
   }
   function _buildToggles(params){
     var toggleDiv=document.getElementById('transient-toggles');
@@ -909,11 +1008,16 @@ App.TransientGraph=(function(){
       var absPeak_f=0;
       for(var kf=0;kf<N_f;kf++) if(Math.abs(arr[kf])>absPeak_f) absPeak_f=Math.abs(arr[kf]);
 
-      var isRising_f=absIinf_f>absPeak_f*0.5;
-
       var alpha_f =_systemPoles.alpha;
       var wd_f    =_systemPoles.omegad;
       var isOsc_f =_systemPoles.isOsc;
+
+      /* 곡선 방향(증가/감소) 판정:
+       *   1차 경로 → _fitData(소자별 해석 모델)가 정확하므로 우선 사용.
+       *   진동(2차) → 1차 모델의 방향은 무의미(예: C 차단으로 I_inf=0인
+       *   L도 isRising=true). 실제 파형의 최종값/피크 비로 판정한다. */
+      var fd_f=_fitData[c.id]||null;
+      var isRising_f=(fd_f&&!isOsc_f)?!!fd_f.isRising:(absIinf_f>absPeak_f*0.5);
 
       function fmtRate(r){
         var v,u;
@@ -945,15 +1049,40 @@ App.TransientGraph=(function(){
       if(isOsc_f){
         var a_tex=fmtRate(alpha_f);
         var w_tex=fmtFreq(wd_f);
+        /* 진동 파형은 t=0 값이 0(또는 미소)에서 시작하므로 진폭은 피크 기준 */
+        var Ipk_s='\\mathrm{'+toLatex(_fmtVal(Math.max(absI0_f,absPeak_f),false))+'}';
         if(isRising_f)
           formula=Iinf_s+'\\!\\left(1-e^{-'+a_tex+'\\cdot t}\\bigl(\\cos('+w_tex+'\\cdot t)+\\cdots\\bigr)\\right)';
         else
-          formula=I0_s+'\\,e^{-'+a_tex+'\\cdot t}\\bigl(\\cos('+w_tex+'\\cdot t)+\\cdots\\bigr)';
+          formula=Ipk_s+'\\,e^{-'+a_tex+'\\cdot t}\\bigl(\\cos('+w_tex+'\\cdot t)+\\cdots\\bigr)';
       } else {
-        var tau_f=alpha_f>1e-10?1/alpha_f:_tMax;
-        var tau_s='\\mathrm{'+toLatex(_fmtVal(tau_f,true))+'}';
-        if(isRising_f) formula=Iinf_s+'\\!\\left(1-e^{-t/'+tau_s+'}\\right)';
-        else           formula=I0_s+'\\,e^{-t/'+tau_s+'}';
+        var m2=_secondFit?_secondFit[c.id]:null;
+        if(m2){
+          /* 과감쇠 2차: 파형에서 분해한 모드 합 표기 — 곡선과 라벨 일치.
+           *   i(t) = F + A_s·e^{−t/τ_s} (+ A_f·e^{−t/τ_f})
+           *   빠른 모드가 무의미하면 느린 모드 1항만 표기된다. */
+          var terms=[];
+          if(Math.abs(m2.F)>m2.peakDev*0.02)
+            terms.push({neg:m2.F<0,
+              tex:'\\mathrm{'+toLatex(_fmtVal(Math.abs(m2.F),false))+'}'});
+          [m2.slow, m2.fast].forEach(function(md){
+            if(!md) return;
+            terms.push({neg:md.A<0,
+              tex:'\\mathrm{'+toLatex(_fmtVal(Math.abs(md.A),false))+
+                  '}\\,e^{-t/\\mathrm{'+toLatex(_fmtVal(md.tau,true))+'}}'});
+          });
+          formula=terms.map(function(tm,ti){
+            return (ti===0?(tm.neg?'-':''):(tm.neg?'-':'+'))+tm.tex;
+          }).join('');
+        } else {
+          /* 곡선별 τ 우선 — 전 소자 공통 지배 τ(1/α)만 쓰면 시상수가 다른
+           *   소자의 라벨이 자기 곡선과 어긋난다 */
+          var tau_f=(fd_f&&fd_f.tau>1e-15&&isFinite(fd_f.tau))?fd_f.tau
+                   :(alpha_f>1e-10?1/alpha_f:_tMax);
+          var tau_s='\\mathrm{'+toLatex(_fmtVal(tau_f,true))+'}';
+          if(isRising_f) formula=Iinf_s+'\\!\\left(1-e^{-t/'+tau_s+'}\\right)';
+          else           formula=I0_s+'\\,e^{-t/'+tau_s+'}';
+        }
       }
 
       var kMid=Math.round(0.4*(N_f-1)*Math.min(xMax,_tMax)/_tMax);
