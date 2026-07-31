@@ -6,6 +6,10 @@
 도선으로 연결하면 **MNA(Modified Nodal Analysis)** 로 회로를 해석하여 각 노드의 전위,
 소자 양단 전압, 지로 전류를 실시간으로 계산합니다.
 
+화면은 **수능 물리 문항 그림의 작도 규격**(흰 바탕·검정 선·수식 서체)을 따르며,
+`촬영` 버튼으로 회로를 **SVG 선화**로 내보내 학습지·시험지에 그대로 붙일 수 있습니다.
+자세한 근거와 대조표는 [`Design_Suneung_Comparison.md`](Design_Suneung_Comparison.md) 참고.
+
 빌드 도구·패키지 매니저·트랜스파일러가 필요 없는 **순수 정적 웹앱**입니다.
 
 ---
@@ -21,7 +25,7 @@
 | 실행 모드 | 전류 방향의 반대로 전자가 흐르는 파티클 애니메이션 (전류 크기 ∝ 속도·밀도) |
 | 비유 모드 | Three.js + Cannon-es 물리 엔진으로 회로를 **수로(水路)** 에 비유해 3D 시각화 |
 | 과도 응답 | RC·RL·RLC 과도 응답 그래프 (KaTeX 수식 레이블 포함) |
-| 촬영 모드 | 현재 회로를 PNG 파일로 저장 |
+| 촬영 모드 | 현재 회로를 흰 바탕·검정 선 **SVG** 파일로 저장 (뷰포트 배율과 무관하게 항상 동일) |
 | Undo/Redo | 최대 30단계 (`UNDO_MAX`) |
 | 모바일 지원 | 480px 이하에서 슬라이드 사이드바 · 바텀시트 패널로 전환, 터치 제스처 지원 |
 
@@ -115,11 +119,13 @@ circuit_simulation/
         │   ├── topology.js        # App.Topology — Union-Find 노드 병합
         │   └── solver.js          # App.Solver — MNA 회로 해석 (DC 실수 / AC 복소)
         ├── render/
-        │   ├── symbols.js         # App.Symbols — 소자 심볼 Canvas 드로잉
+        │   ├── svg-shapes.js      # App.SN — 수능 지면 규격 토큰 + Canvas2D→SVG 기록기
+        │   ├── symbols.js         # App.Symbols — 소자 심볼 드로잉 (Canvas / Recorder 공용)
         │   ├── grid-renderer.js   # App.GridRenderer — 격자 배경 (canvas-bg)
         │   ├── edit-renderer.js   # App.EditRenderer — 편집 모드 (canvas-main)
         │   ├── run-renderer.js    # App.RunRenderer — 전자 이동 애니메이션 (canvas-anim)
-        │   └── analogy-renderer.js# App.AnalogyRenderer — 수로 비유 3D
+        │   ├── analogy-renderer.js# App.AnalogyRenderer — 수로 비유 3D
+        │   └── capture.js         # App.Capture — SVG 선화 내보내기 (촬영)
         ├── ui/
         │   ├── interaction.js     # App.Interaction — 포인터 제스처 FSM · 키보드
         │   ├── transient-graph.js # App.TransientGraph — 과도 응답 그래프
@@ -277,7 +283,10 @@ App.State.components.push(comp);      // ❌ Undo 히스토리·렌더 갱신 �
    - `COMP_PORTS` 에 포트 문자열 정의 (예: `'LR'`)
    - 다중 연결이 필요하면 `MULTI_PORT_TYPES` 에 등록
 2. **`src/js/render/symbols.js`** — 심볼 드로잉 함수 추가.
-   `(cx, cy)` 중심, `r = size/2` 반지름 규약을 따르고 `draw()` 의 분기에 연결
+   `(cx, cy)` 중심, `r = size/2` 반지름 규약을 따르고 `draw()` 의 분기에 연결.
+   `ctx` 는 Canvas 컨텍스트일 수도, `App.SN.Recorder`(SVG 내보내기)일 수도 있으므로
+   **경로 API 만** 사용하세요 (`measureText`·`shadowBlur` 등은 기록기에 없습니다).
+   그러면 촬영(SVG)은 별도 작업 없이 자동으로 지원됩니다.
 3. **`src/js/circuit/solver.js`** — MNA 스탬프(stamp) 추가.
    DC 경로와 AC 경로 양쪽 모두 처리
 4. **`src/js/ui/prop-panel.js`** — `FIELDS` 테이블에 편집 가능한 물리량 정의
