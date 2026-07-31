@@ -1,5 +1,7 @@
 # 전기회로 시뮬레이터 (Circuit Simulator)
 
+**▶ 데모: [shy.ai.kr/circuit_simulation](http://shy.ai.kr/circuit_simulation/)**
+
 브라우저에서 동작하는 대화형 전기회로 시뮬레이터입니다. 격자 위에 소자를 배치하고
 도선으로 연결하면 **MNA(Modified Nodal Analysis)** 로 회로를 해석하여 각 노드의 전위,
 소자 양단 전압, 지로 전류를 실시간으로 계산합니다.
