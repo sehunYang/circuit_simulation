@@ -3,7 +3,41 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>전기회로 시뮬레이터</title>
+  <title>전기회로 시뮬레이터 — MNA 회로 해석 · 전자 이동 · 수로 비유 3D</title>
+
+  <!-- ════════════════════════════════════════════════════════════════
+       문서 정보 (검색 결과 · 링크 미리보기 · 브라우저 탭)
+         canonical/og:url 은 절대 URL 이어야 미리보기가 동작한다.
+       ════════════════════════════════════════════════════════════════ -->
+  <meta name="description" content="격자에 소자를 놓고 도선으로 이으면 MNA(수정 노드 해석)로 회로를 풀어 노드 전위·소자 전압·지로 전류를 실시간 계산하는 웹 전기회로 시뮬레이터. DC·AC 해석, 전자 이동 애니메이션, 수로 비유 3D, 과도 응답 그래프를 제공하며 수능 물리 문항 작도 규격의 PNG 선화로 내보냅니다.">
+  <meta name="keywords" content="전기회로 시뮬레이터,회로 해석,MNA,수정 노드 해석,키르히호프,RC,RL,RLC,과도 응답,교류 회로,페이저,전자 이동,수능 물리,물리 교육,회로도 그리기">
+  <meta name="author" content="양세훈">
+  <meta name="theme-color" content="#1d4ed8">
+  <meta name="color-scheme" content="light">
+  <link rel="canonical" href="https://shy.ai.kr/circuit_simulation/">
+
+  <!-- 파비콘 · 홈 화면 아이콘 -->
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-title" content="전기회로">
+
+  <!-- Open Graph (카카오톡·페이스북 등 링크 미리보기) -->
+  <meta property="og:type"        content="website">
+  <meta property="og:site_name"   content="전기회로 시뮬레이터">
+  <meta property="og:title"       content="전기회로 시뮬레이터">
+  <meta property="og:description" content="소자를 배치하고 도선으로 이으면 MNA 로 회로를 풀어 전위·전압·전류를 실시간 계산합니다. DC·AC 해석, 전자 이동 애니메이션, 수로 비유 3D, 과도 응답 그래프, 수능 규격 PNG 내보내기.">
+  <meta property="og:url"         content="https://shy.ai.kr/circuit_simulation/">
+  <meta property="og:image"       content="https://shy.ai.kr/circuit_simulation/assets/og-image.png">
+  <meta property="og:image:width"  content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:locale"      content="ko_KR">
+
+  <!-- Twitter/X 카드 -->
+  <meta name="twitter:card"        content="summary_large_image">
+  <meta name="twitter:title"       content="전기회로 시뮬레이터">
+  <meta name="twitter:description" content="MNA 회로 해석 · 전자 이동 애니메이션 · 수로 비유 3D · 과도 응답 그래프. 수능 물리 문항 작도 규격 PNG 내보내기.">
+  <meta name="twitter:image"       content="https://shy.ai.kr/circuit_simulation/assets/og-image.png">
 
   <!-- 외부 라이브러리: KaTeX (수식 렌더링) -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">

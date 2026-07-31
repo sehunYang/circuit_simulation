@@ -84,9 +84,11 @@ App.Capture=(function(){
           var pp=_port(comp,isFrom?w.fromPort:w.toPort);
           g.beginPath(); g.moveTo(c.x,c.y); g.lineTo(pp.x,pp.y); g.stroke();
         });
-        /* 중심 접점 — 심볼과 같은 반지름 규약 (r·0.10, r=CS/2) */
-        g.fillStyle=SN.TOKENS.ink;
-        g.beginPath(); g.arc(c.x,c.y,CS*0.05,0,Math.PI*2); g.fill();
+        /* 중심 접점(점)은 찍지 않는다 — 수능 문항 그림에서 분기점은 도선이
+         * 만나는 것으로만 표현하고 별도 점을 두지 않는다. 다리들이 중심에서
+         * 이미 만나므로 점 없이도 접속으로 읽힌다.
+         * (화면 편집용 심볼 App.Symbols.drawJunction 의 점은 그대로 둔다 —
+         *  거기서는 분기점 소자가 어디 있는지 보여야 하기 때문) */
         return;
       }
 
