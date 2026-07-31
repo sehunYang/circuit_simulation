@@ -8,12 +8,13 @@ var App=window.App;
  *   ▣ 설계 개요 (AI Agent Guide 기반)
  *     · 전압(V)  → 수로의 '높이(Head)'          : 노드 전위를 Y축 높이로 매핑
  *     · 전류(I)  → 물의 '유속'                    : 물 입자 이동 속도 ∝ |전류|
- *     · DC 전원  → 수직 양수 펌프(임펠러 회전)     : 낮은 포트→높은 포트로 물을 들어올림
- *     · 도선     → 매끄러운 경사 수로(Flume)       : 양 끝 전위 동일 → 거의 수평
- *     · 저항     → 일 수행 물레방아(Waterwheel)    : 낙차 통과, R↑ → 뻑뻑·느림·큰 낙차
- *     · 분기점   → 갈림길 베이슨(Junction Basin)   : KCL은 솔버 전류로 자동 충족
- *     · 축전기   → 수문 댐(Dam/Floodgate)          : 충전(차오름)→DC 차단(유속0)
- *     · 인덕터   → 소용돌이 나선 수로(Vortex)       : 가동 시 유속 서서히 증가(역기전력)
+ *     · DC 전원  → 양수 펌프장(나선 양수기)        : 낮은 포트→높은 포트로 물을 들어올림
+ *     · 도선     → 개방형 콘크리트 수로(Flume)     : 석조 교각 위 U자 물길, 물 표면 노출
+ *     · 저항     → 목재 물레방아(Waterwheel)       : 낙차 폭포 통과, R↑ → 뻑뻑·느림·큰 낙차
+ *     · 분기점   → 갈림길 수반(Junction Basin)     : 개방 원형 물웅덩이, KCL 자동 충족
+ *     · 축전기   → 저수탑(Storage Tank)            : 수위가 차오르며 충전, 유입 수로
+ *                                                    높이에 닿으면 흐름 정지(DC 차단)
+ *     · 인덕터   → 무거운 플라이휠 수차(Flywheel)   : 관성으로 유속이 서서히 상승/유지
  *
  *   ▣ 렌더링: Three.js 로 2.5D 측면 뷰(약간 위·옆에서 본 각도)를 구성.
  *             전위가 높을수록 물리적으로 높은 위치에 배치되어 물이 아래로 흐른다.
@@ -34,19 +35,26 @@ App.AnalogyRenderer=(function(){
   var CH_W        = 0.55;   // 수로 폭
   var WHEEL_OMEGA_MAX = 5.0; // 물레방아 최대 각속도 (rad/s) — 전력 비례, 상한
   var PUMP_OMEGA_MAX  = 6.0; // 펌프 임펠러 최대 각속도 (rad/s)
+  var IND_OMEGA_MAX   = 4.5; // 인덕터 플라이휠 최대 각속도 (rad/s) — 전류 비례
   var PARTICLE_SPACING= 1.1; // 전자(입자) 균등 간격 (월드 거리) — 모든 도선 공통
   var I_REF_SPEED     = 0;   // 전류→속력 정규화 기준 (start에서 _maxI로 설정)
 
   /* ── 색상 ──
-   *   물·수로는 파란색 유지(물의 정체성). 소자 본체는 종류별 고유색으로 구분.
-   *   저항=주황(열 소비), 전원=초록(에너지원), 인덕터=보라(자기), 축전기=갈색(저수), 분기=회색 */
-  var COL_WATER   = 0x3aa0ff;   // 물 (파랑, 유지)
-  var COL_CHANNEL = 0x16335c;   // 수로 (진한 파랑, 유지)
-  var COL_WHEEL   = 0xe08850;   // 저항 물레방아 (주황/적갈)
-  var COL_PUMP    = 0x4cc266;   // 전원 펌프 (초록)
-  var COL_DAM     = 0xc79a55;   // 축전기 댐 (갈색 톤업)
-  var COL_VORTEX  = 0x9b6fd0;   // 인덕터 코일 (보라)
-  var COL_NODE    = 0x8a9bb0;   // 분기점 (중립 회색)
+   *   실제 야외 수로(콘크리트 농수로 + 잔디 지형)의 자연 팔레트.
+   *   물=청록 계열, 수로 벽=밝은 콘크리트, 물레방아=목재, 플라이휠=주철,
+   *   펌프=적색 기계 하우징, 고무막=주황 고무, 교각=석재. */
+  var COL_WATER   = 0x2e8fd0;   // 물 본체 (자연스러운 강물 파랑)
+  var COL_WATER_HI= 0x6fc0ea;   // 물 표면 하이라이트
+  var COL_STONE   = 0xcac2b0;   // 콘크리트/석조 수로 벽
+  var COL_STONE_DK= 0xa89f8b;   // 석재 어두운 톤 (교각·기초)
+  var COL_WOOD    = 0x8a5a33;   // 물레방아 목재
+  var COL_WOOD_DK = 0x5f3c20;   // 목재 어두운 톤
+  var COL_IRON    = 0x8593a3;   // 플라이휠 주철
+  var COL_PUMP    = 0xc0453a;   // 펌프 기계 하우징 (적색)
+  var COL_STEEL   = 0x9fb4c6;   // 강철 (나선 양수기·배관 밴드)
+  var COL_RUBBER  = 0xe8604c;   // 축전기 고무막
+  var COL_GLASS   = 0xeaf4fb;   // 유리 (탱크·펌프관)
+  var COL_GRASS   = 0xa3bf85;   // 잔디 지면
 
   /* ── Three / Cannon 핸들 ── */
   var _renderer, _scene, _camera, _cv, _container;
@@ -122,10 +130,74 @@ App.AnalogyRenderer=(function(){
   function _grid3D(gx,gy,y){
     return new THREE.Vector3((gx-_cxGrid)*SP, y, (gy-_czGrid)*SP);
   }
-  /* 채널(수로) 한 구간: 두 점이 충분히 떨어졌을 때만 관을 추가. 메쉬 반환. */
+  /* ── 개방형 U자 수로(트로프) ──
+   *   실제 콘크리트 농수로처럼 위가 트인 물길: 바닥판 + 양쪽 벽 + 노출된 물 표면.
+   *   길이 방향 = 로컬 +Z. 회전 순서 YXZ(요→피치)라 롤 없이 벽이 항상 수직. */
+  var TR_W  = 0.92;   // 수로 바깥 폭
+  var TR_TH = 0.10;   // 벽 두께
+  var TR_H  = 0.62;   // 벽 높이 (바닥판 윗면 기준)
+  var TR_BOT= 0.34;   // 레인 중심선(y=0)에서 바닥판 윗면까지 깊이
+  function _stoneMat(){ return new THREE.MeshStandardMaterial({color:COL_STONE,roughness:0.9,metalness:0.02}); }
+  function _waterMat(op){ return new THREE.MeshStandardMaterial({color:COL_WATER,transparent:true,
+          opacity:(op!=null?op:0.9),roughness:0.15,metalness:0.05,
+          emissive:0x0d3a60,emissiveIntensity:0.3}); }
+  /* 그룹을 a→b 로 배치 (위치·요·피치·길이 스케일). 물길·폭포 등 공용. */
+  function _orientTrough(grp,a,b){
+    var dx=b.x-a.x, dy=b.y-a.y, dz=b.z-a.z;
+    var len=Math.sqrt(dx*dx+dy*dy+dz*dz); if(len<1e-4)len=1e-4;
+    grp.position.set((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2);
+    grp.rotation.order='YXZ';
+    grp.rotation.y=Math.atan2(dx,dz);
+    grp.rotation.x=-Math.asin(_clamp(dy/len,-1,1));
+    grp.rotation.z=0;
+    grp.scale.z=len/(grp._baseLen||len);
+  }
+  function _troughBetween(a,b){
+    var len=a.distanceTo(b); if(len<1e-4)len=1e-4;
+    var grp=new THREE.Group(); grp._baseLen=len;
+    var stone=_stoneMat();
+    /* 바닥판 */
+    var bottom=new THREE.Mesh(new THREE.BoxGeometry(TR_W,TR_TH,len),stone);
+    bottom.position.y=-TR_BOT-TR_TH/2;
+    grp.add(bottom);
+    /* 양쪽 벽 */
+    [-1,1].forEach(function(sx){
+      var wall=new THREE.Mesh(new THREE.BoxGeometry(TR_TH,TR_H,len),stone);
+      wall.position.set(sx*(TR_W/2-TR_TH/2), -TR_BOT+TR_H/2, 0);
+      grp.add(wall);
+      /* 벽 상단 테두리(캡) — 콘크리트 수로 특유의 두툼한 마감 */
+      var cap=new THREE.Mesh(new THREE.BoxGeometry(TR_TH*1.8,TR_TH*0.8,len),stone);
+      cap.position.set(sx*(TR_W/2-TR_TH/2), -TR_BOT+TR_H+TR_TH*0.4-0.01, 0);
+      grp.add(cap);
+    });
+    /* 물 — 위가 트여 표면이 보인다 */
+    var water=new THREE.Mesh(new THREE.BoxGeometry(TR_W-2*TR_TH,TR_BOT+0.06,len*0.999),_waterMat());
+    water.position.y=(-TR_BOT+0.06)/2;
+    grp.add(water);
+    _orientTrough(grp,a,b);
+    return grp;
+  }
+  /* 채널(수로) 한 구간: 두 점이 충분히 떨어졌을 때만 추가. 트로프 그룹 반환. */
   function _channelSeg(p,q){
-    if(p.distanceTo(q)>0.02){ var m=_tubeBetween(p,q,CH_W*0.5,COL_CHANNEL,0.45); _scene.add(m); return m; }
+    if(p.distanceTo(q)>0.02){ var m=_troughBetween(p,q); _scene.add(m); return m; }
     return null;
+  }
+  /* 꺾임점·합류점의 네모 수반: 바닥판 + 물 + 네 귀퉁이 낮은 기둥 (트인 코너 풀) */
+  function _bendBasin(pos){
+    var grp=new THREE.Group();
+    var s=TR_W*1.5;
+    var stone=_stoneMat();
+    var bottom=new THREE.Mesh(new THREE.BoxGeometry(s,TR_TH,s),stone);
+    bottom.position.y=-TR_BOT-TR_TH/2; grp.add(bottom);
+    var water=new THREE.Mesh(new THREE.BoxGeometry(s-TR_TH,TR_BOT+0.06,s-TR_TH),_waterMat());
+    water.position.y=(-TR_BOT+0.06)/2; grp.add(water);
+    [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(function(c){
+      var post=new THREE.Mesh(new THREE.BoxGeometry(TR_TH*1.7,TR_H+TR_TH,TR_TH*1.7),stone);
+      post.position.set(c[0]*(s/2-TR_TH*0.85), -TR_BOT+(TR_H+TR_TH)/2, c[1]*(s/2-TR_TH*0.85));
+      grp.add(post);
+    });
+    grp.position.copy(pos);
+    return grp;
   }
   /* 두 점 사이 튜브의 position·회전·길이를 갱신 (시변 높이 대응) */
   function _updateTube(mesh,a,b,radius){
@@ -149,18 +221,12 @@ App.AnalogyRenderer=(function(){
   }
 
   /* ── 외형 가시성 보조 헬퍼 ── */
-  /* 소자 발밑 원형 받침대 (바닥에서 위치·종류 식별) */
-  function _addBaseDisk(center, radius, color){
-    var disk=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*1.08,0.18,24),
-             new THREE.MeshStandardMaterial({color:color,roughness:0.7,metalness:0.15,
-               emissive:color,emissiveIntensity:0.18}));
+  /* 소자 발밑 석조 기초(초석) — 실제 수리 구조물의 콘크리트 기초 패드 */
+  function _addBaseDisk(center, radius){
+    var disk=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius*1.15,0.22,20),
+             new THREE.MeshStandardMaterial({color:COL_STONE_DK,roughness:0.95,metalness:0.02}));
     disk.position.set(center.x, -0.5, center.z);   // 지면 근처
     _scene.add(disk);
-    /* 받침대에서 소자까지 가는 흐릿한 기둥 (연결감) */
-    var pole=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,Math.max(0.2,center.y+0.5),8),
-             new THREE.MeshStandardMaterial({color:color,transparent:true,opacity:0.25,roughness:0.8}));
-    pole.position.set(center.x, (center.y-0.5)/2, center.z);
-    _scene.add(pole);
     return disk;
   }
   /* 위로 향하는 화살표 (펌프 양수 방향 등) — 콘 + 원기둥 */
@@ -363,34 +429,44 @@ App.AnalogyRenderer=(function(){
       App.Geo.getCompPorts(c).forEach(function(p){bb.expandByPoint(_portPos(c,p));has=true;});
     });
     if(!has){bb.expandByPoint(new THREE.Vector3(-4,0,-4));bb.expandByPoint(new THREE.Vector3(4,0,4));}
-    var sizeX=Math.max(12,(bb.max.x-bb.min.x)+8);
-    var sizeZ=Math.max(12,(bb.max.z-bb.min.z)+8);
+    var sizeX=Math.max(34,(bb.max.x-bb.min.x)+26);
+    var sizeZ=Math.max(34,(bb.max.z-bb.min.z)+26);
     var cx=(bb.max.x+bb.min.x)/2, cz=(bb.max.z+bb.min.z)/2;
     var g=new THREE.PlaneGeometry(sizeX,sizeZ);
-    /* 바닥 — 지면(밝은 회색) 톤. 소자 색은 의미(물=파랑 등)라 그대로 두고,
-     * 환경만 밝게 맞춰 앱 전체가 한 벌로 읽히게 한다. */
-    var m=new THREE.MeshStandardMaterial({color:0xe4e7ec,roughness:1,metalness:0});
+    /* 바닥 — 잔디 지형. 야외 관개수로가 놓인 들판 느낌. */
+    var m=new THREE.MeshStandardMaterial({color:COL_GRASS,roughness:1,metalness:0});
     var plane=new THREE.Mesh(g,m);
     plane.rotation.x=-Math.PI/2; plane.position.set(cx,-0.6,cz);
     _scene.add(plane);
-    /* 격자선 */
-    var grid=new THREE.GridHelper(Math.max(sizeX,sizeZ),Math.round(Math.max(sizeX,sizeZ)/SP),0x9aa2b0,0xc2c8d2);
-    grid.material.opacity=0.5; grid.material.transparent=true;
-    grid.position.set(cx,-0.58,cz);
-    _scene.add(grid);
-    /* 카메라 프레이밍 */
+    /* 잔디 얼룩(짙은 풀밭 패치) — 지면에 밀착시켜 들판의 색 변화만 준다 */
+    var tuftMat=new THREE.MeshStandardMaterial({color:0x86a463,roughness:1,metalness:0});
+    var seed=12345;
+    function rnd(){ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; }
+    for(var ti=0;ti<28;ti++){
+      var tr=0.6+rnd()*1.3;
+      var tuft=new THREE.Mesh(new THREE.CircleGeometry(tr,9),tuftMat);
+      tuft.rotation.x=-Math.PI/2;
+      tuft.position.set(cx+(rnd()-0.5)*sizeX*0.92, -0.588, cz+(rnd()-0.5)*sizeZ*0.92);
+      _scene.add(tuft);
+    }
+    /* 카메라 프레이밍 — 지면이 아니라 회로 크기에 맞춘다 */
+    var ext=Math.max(bb.max.x-bb.min.x, bb.max.z-bb.min.z)+8;
     _cam.tx=cx; _cam.tz=cz; _cam.ty=(bb.max.y+bb.min.y)/2;
-    _cam.dist=_clamp(Math.max(sizeX,sizeZ)*1.15,16,70);
+    _cam.dist=_clamp(ext*1.15,16,70);
   }
 
   function _nodePillar(pos){
-    /* 전위 높이를 지면과 잇는 기둥 (높이=전압 시각화) */
-    var h=Math.max(0.1,pos.y+0.6);
-    var geo=new THREE.BoxGeometry(0.5,h,0.5);
-    var mat=new THREE.MeshStandardMaterial({color:COL_NODE,roughness:0.8,metalness:0.1,transparent:true,opacity:0.55});
-    var m=new THREE.Mesh(geo,mat);
-    m.position.set(pos.x,pos.y-h/2+0.1,pos.z);
-    _scene.add(m);
+    /* 수로교(水路橋) 석조 교각 — 지면에서 수로 바닥까지 (높이=전위 시각화) */
+    var topY=pos.y-TR_BOT-TR_TH;             // 수로 바닥판 밑면까지
+    var h=Math.max(0.12,topY+0.6);
+    var mat=new THREE.MeshStandardMaterial({color:COL_STONE_DK,roughness:0.95,metalness:0.02});
+    var pier=new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.38,h,10),mat);
+    pier.position.set(pos.x,-0.6+h/2,pos.z);
+    _scene.add(pier);
+    /* 교각 머리(코핑) — 수로를 받치는 넓은 받침돌 */
+    var cap=new THREE.Mesh(new THREE.BoxGeometry(TR_W+0.25,0.12,TR_W+0.25),mat);
+    cap.position.set(pos.x,topY-0.06,pos.z);
+    _scene.add(cap);
   }
 
   /* 도선 → 경사 수로 + 물 레인 (편집 모드와 동일한 ㄱ/ㄴ 직각 경로) */
@@ -452,12 +528,11 @@ App.AnalogyRenderer=(function(){
     /* 두 직선 구간으로 수로 구성 (꺾임점에서 90° 전환) */
     var tube1=_channelSeg(A,Bend);
     var tube2=_channelSeg(Bend,B);
-    /* 꺾임 모서리를 둥글게 (실제 도선처럼 매끄럽게 연결) */
+    /* 꺾임 모서리: 실제 관개수로처럼 네모난 모서리 수반(basin)으로 연결 */
     var bendMesh=null;
     if(d1>0.02 && d2>0.02){
-      bendMesh=new THREE.Mesh(new THREE.SphereGeometry(CH_W*0.5,10,8),
-             new THREE.MeshStandardMaterial({color:COL_CHANNEL,transparent:true,opacity:0.45,roughness:0.6}));
-      bendMesh.position.copy(Bend); _scene.add(bendMesh);
+      bendMesh=_bendBasin(Bend);
+      _scene.add(bendMesh);
     }
     /* 도선 가지 전류 모델 (branchModel.byWire) */
     var wm=(_branchModel&&_branchModel.byWire)?_branchModel.byWire[w.id]:null;
@@ -527,77 +602,86 @@ App.AnalogyRenderer=(function(){
     });
   }
 
-  /* 저항 → 물레방아 */
+  /* 저항 → 목재 물레방아 + 낙차 폭포
+   *   물이 위 수로 끝에서 폭포로 떨어져 물레방아를 돌리고 아래 수로로 빠져나간다.
+   *   낙차(수위차)=전압강하, 회전 일=소비전력. */
   function _buildResistor(c){
     var ports=App.Geo.getCompPorts(c);
     var pA=_portPos(c,ports[0]), pB=_portPos(c,ports[1]);
     var hi=pA.y>=pB.y?pA:pB, lo=pA.y>=pB.y?pB:pA;
     var sr=App.State.solverResult;
     var I=Math.abs((sr&&sr.branchCurrents&&sr.branchCurrents[c.id])||0);
-    var Vd=Math.abs((sr&&sr.componentVoltages&&sr.componentVoltages[c.id])||0);
-    var P=Vd*I;
     /* 저항 가지 전류 모델 (C와 직렬이면 i0>0·iinf=0 → 초반에 돈다, #2 수정) */
     var rm=(_branchModel&&_branchModel.byComp)?_branchModel.byComp[c.id]:null;
     /* 순간전력 정규화 기준: i_peak^2·R (i_peak = max(|i0|,|iinf|)) */
     var ipk=rm?Math.max(Math.abs(rm.i0),Math.abs(rm.iinf)):I;
     var Ppeak=ipk*ipk*Math.max(c.value||0,1e-6);
     var center=_compCenter(c);
-    var wheelR=1.35;   // 스케일업
+    /* 바퀴 반경: 낙차에 맞춰 조정 (물이 상단 진입→하단 배출로 자연스럽게) */
+    var wheelR=_clamp((hi.y-lo.y)*0.45,0.85,1.6);
 
-    /* 받침대 (저항색) */
-    _addBaseDisk(center, wheelR*0.95, COL_WHEEL);
+    /* 석조 기초 */
+    _addBaseDisk(center, wheelR*0.9);
 
-    /* 낙차 수직관 (high → wheel → low) */
+    /* 유입·유출 개방 수로 (상단: 고전위, 하단: 저전위) */
     var top=new THREE.Vector3(center.x,hi.y,center.z);
     var bot=new THREE.Vector3(center.x,lo.y,center.z);
-    var rtTube1=_tubeBetween(hi,top,CH_W*0.45,COL_CHANNEL,0.45);
-    var rtTube2=_tubeBetween(bot,lo,CH_W*0.45,COL_CHANNEL,0.45);
-    _scene.add(rtTube1); _scene.add(rtTube2);
+    var rtTube1=_channelSeg(hi,top);
+    var rtTube2=_channelSeg(bot,lo);
 
-    /* 물레방아 (Three 메쉬 그룹) */
+    /* 물레방아 (Three 메쉬 그룹) — 목재 */
     var grp=new THREE.Group();
     grp.position.set(center.x,(hi.y+lo.y)/2,center.z);
-    /* 중심 축(hub) */
-    var hub=new THREE.Mesh(new THREE.CylinderGeometry(wheelR*0.14,wheelR*0.14,0.7,14),
-            new THREE.MeshStandardMaterial({color:0x9aa,roughness:0.5,metalness:0.6}));
+    var woodMat=new THREE.MeshStandardMaterial({color:COL_WOOD,roughness:0.85,metalness:0.02});
+    var woodDk =new THREE.MeshStandardMaterial({color:COL_WOOD_DK,roughness:0.85,metalness:0.02});
+    /* 중심 축(hub) + 쇠 굴대 */
+    var hub=new THREE.Mesh(new THREE.CylinderGeometry(wheelR*0.16,wheelR*0.16,0.62,12),woodDk);
     hub.rotation.x=Math.PI/2; grp.add(hub);
-    /* 양쪽 림(두 개의 테) — 폭 있는 물레바퀴 느낌 */
-    [-0.22,0.22].forEach(function(zoff){
-      var rim=new THREE.Mesh(new THREE.TorusGeometry(wheelR,wheelR*0.07,8,28),
-              new THREE.MeshStandardMaterial({color:COL_WHEEL,roughness:0.5,metalness:0.2}));
+    var axle=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,1.5,10),
+             new THREE.MeshStandardMaterial({color:COL_IRON,roughness:0.45,metalness:0.35}));
+    axle.rotation.x=Math.PI/2; grp.add(axle);
+    /* 양쪽 림(두 개의 나무 테) */
+    [-0.3,0.3].forEach(function(zoff){
+      var rim=new THREE.Mesh(new THREE.TorusGeometry(wheelR,wheelR*0.075,8,30),woodMat);
       rim.position.z=zoff; grp.add(rim);
     });
-    /* 컵(scoop) 형태 날개 — 물을 담는 휘어진 패들 */
-    var blades=10;
-    var scoopMat=new THREE.MeshStandardMaterial({color:COL_WHEEL,roughness:0.5,metalness:0.2,side:THREE.DoubleSide});
+    /* 판자 패들 — 실제 물레방아처럼 납작한 나무 판 */
+    var blades=12;
     for(var i=0;i<blades;i++){
       var a=(i/blades)*Math.PI*2;
-      /* 패들: 반열린 원통 조각(컵)으로 물을 받는 형태 */
-      var scoop=new THREE.Mesh(
-        new THREE.CylinderGeometry(wheelR*0.26,wheelR*0.26,0.5,8,1,true,0,Math.PI),
-        scoopMat);
-      scoop.position.set(Math.cos(a)*wheelR*0.74,Math.sin(a)*wheelR*0.74,0);
-      scoop.rotation.z=a-Math.PI/2;       // 컵 입구가 회전 접선 방향
-      scoop.rotation.y=Math.PI/2;
-      grp.add(scoop);
-      /* 살(spoke) */
-      var spoke=new THREE.Mesh(new THREE.BoxGeometry(wheelR*0.8,0.06,0.06),
-                new THREE.MeshStandardMaterial({color:COL_WHEEL,roughness:0.6,metalness:0.2}));
-      spoke.position.set(Math.cos(a)*wheelR*0.4,Math.sin(a)*wheelR*0.4,0);
+      var paddle=new THREE.Mesh(new THREE.BoxGeometry(wheelR*0.46,0.07,0.72),woodMat);
+      paddle.position.set(Math.cos(a)*wheelR*0.82,Math.sin(a)*wheelR*0.82,0);
+      paddle.rotation.z=a; grp.add(paddle);
+      /* 살(spoke) — 얇은 나무 살대 */
+      var spoke=new THREE.Mesh(new THREE.BoxGeometry(wheelR*0.66,0.055,0.055),woodDk);
+      spoke.position.set(Math.cos(a)*wheelR*0.42,Math.sin(a)*wheelR*0.42,0);
       spoke.rotation.z=a; grp.add(spoke);
     }
-    /* 마찰열(전력) 글로우 */
-    var glow=new THREE.Mesh(new THREE.SphereGeometry(wheelR*1.1,16,12),
-            new THREE.MeshBasicMaterial({color:0xff5530,transparent:true,opacity:0.0}));
+    /* 마찰열(전력) 글로우 — 허브 주변의 은은한 붉은 기운 (휠을 가리지 않게 작게) */
+    var glow=new THREE.Mesh(new THREE.SphereGeometry(wheelR*0.5,14,10),
+            new THREE.MeshBasicMaterial({color:0xff6a40,transparent:true,opacity:0.0}));
     grp.add(glow);
     _scene.add(grp);
 
-    /* 축 지지대(A자 받침) — 물레방아 구조 명확화 */
-    var supMat=new THREE.MeshStandardMaterial({color:0x4a5a72,roughness:0.7,metalness:0.3});
-    [-0.55,0.55].forEach(function(zoff){
-      var leg=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,wheelR*1.5,8),supMat);
-      leg.position.set(center.x, (hi.y+lo.y)/2 - wheelR*0.55, center.z+zoff);
+    /* 폭포(낙차수) — 위 수로 끝→바퀴 상단, 바퀴 하단→아래 수로 물기둥 두 개 */
+    var yMid0=(hi.y+lo.y)/2;
+    var fallEnd=new THREE.Vector3(center.x,Math.min(hi.y-0.05,yMid0+wheelR*0.85),center.z);
+    var fall=_tubeBetween(top,fallEnd,0.17,COL_WATER,0.65);
+    _scene.add(fall);
+    var fall2Start=new THREE.Vector3(center.x,Math.max(lo.y+0.05,yMid0-wheelR*0.85),center.z);
+    var fall2=_tubeBetween(fall2Start,bot,0.17,COL_WATER,0.65);
+    _scene.add(fall2);
+
+    /* 축 지지대 — 굵은 석조 기둥 두 개 (지면→굴대) */
+    var supMat=new THREE.MeshStandardMaterial({color:COL_STONE_DK,roughness:0.95,metalness:0.02});
+    var legs=[];
+    [-0.72,0.72].forEach(function(zoff){
+      var legH=Math.max(0.3,yMid0+0.5);
+      var leg=new THREE.Mesh(new THREE.BoxGeometry(0.3,1,0.3),supMat);
+      leg.scale.y=legH;
+      leg.position.set(center.x, -0.5+legH/2, center.z+zoff);
       _scene.add(leg);
+      legs.push(leg);
     });
 
     /* 낙차 물 레인 — 입자가 물레방아 바깥 테두리(외주)를 타고 돌며 패들을 밀어
@@ -632,6 +716,7 @@ App.AnalogyRenderer=(function(){
     var rotor=_makeRotor(grp.position,wheelR,0.8);
     _wheels.push({grp:grp,rotor:rotor,glow:glow,comp:c,cur:rm,R:Math.max(c.value||0,1e-6),Ppeak:Ppeak,
                   pHi:pHi,pLo:pLo,cx:center.x,cz:center.z,tube1:rtTube1,tube2:rtTube2,lane:lane,
+                  hiX:hi.x,hiZ:hi.z,loX:lo.x,loZ:lo.z,fall:fall,fall2:fall2,legs:legs,
                   wheelR:wheelR, splash:splash, splashTimer:0});
   }
 
@@ -671,34 +756,51 @@ App.AnalogyRenderer=(function(){
       isBackEMF = !sameAsEMF;
     }
 
-    /* 받침대 (전원색) */
-    _addBaseDisk(center, 0.95, COL_PUMP);
+    /* 석조 기초 */
+    _addBaseDisk(center, 1.0);
 
-    /* 양수 샤프트 (낮은 곳→높은 곳) — 굵게 */
+    /* 양수관 (낮은 곳→높은 곳) — 내부가 보이는 유리 관 + 강철 밴드 */
     var top=new THREE.Vector3(center.x,hi.y,center.z);
     var bot=new THREE.Vector3(center.x,lo.y,center.z);
     var shaftH=Math.max(0.2,hi.y-lo.y);
     var shaft=new THREE.Mesh(new THREE.CylinderGeometry(0.62,0.62,shaftH,18,1,true),
-              new THREE.MeshStandardMaterial({color:COL_PUMP,roughness:0.4,metalness:0.3,transparent:true,opacity:0.42,side:THREE.DoubleSide}));
+              new THREE.MeshStandardMaterial({color:COL_GLASS,roughness:0.5,metalness:0,
+                transparent:true,opacity:0.25,side:THREE.DoubleSide,depthWrite:false}));
     shaft.position.set(center.x,(hi.y+lo.y)/2,center.z);
     _scene.add(shaft);
-    /* 흡입구(하단, 깔때기) + 배출구(상단) */
-    var inlet=new THREE.Mesh(new THREE.CylinderGeometry(0.85,0.55,0.5,16,1,true),
-              new THREE.MeshStandardMaterial({color:COL_PUMP,roughness:0.5,metalness:0.3,transparent:true,opacity:0.6,side:THREE.DoubleSide}));
+    /* 관 속 물기둥 — 펌프가 퍼올리는 물이 보이도록 */
+    var pipeWater=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,shaftH*0.98,16),_waterMat(0.5));
+    pipeWater.position.copy(shaft.position); _scene.add(pipeWater);
+    /* 강철 밴드 (위·중간·아래) */
+    var bandMat=new THREE.MeshStandardMaterial({color:COL_STEEL,roughness:0.4,metalness:0.35});
+    [lo.y+0.15,(hi.y+lo.y)/2,hi.y-0.15].forEach(function(by){
+      var band=new THREE.Mesh(new THREE.CylinderGeometry(0.68,0.68,0.14,18),bandMat);
+      band.position.set(center.x,by,center.z); _scene.add(band);
+    });
+    /* 흡입구(하단 깔때기) + 배출구(상단) — 강철 */
+    var funMat=new THREE.MeshStandardMaterial({color:COL_STEEL,roughness:0.45,metalness:0.3,side:THREE.DoubleSide});
+    var inlet=new THREE.Mesh(new THREE.CylinderGeometry(0.88,0.58,0.5,16,1,true),funMat);
     inlet.position.set(center.x, lo.y+0.1, center.z); _scene.add(inlet);
-    var outlet=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.8,0.5,16,1,true),
-              new THREE.MeshStandardMaterial({color:COL_PUMP,roughness:0.5,metalness:0.3,transparent:true,opacity:0.6,side:THREE.DoubleSide}));
+    var outlet=new THREE.Mesh(new THREE.CylinderGeometry(0.58,0.85,0.5,16,1,true),funMat);
     outlet.position.set(center.x, hi.y-0.1, center.z); _scene.add(outlet);
-    _scene.add(_tubeBetween(lo,bot,CH_W*0.45,COL_CHANNEL,0.45));
-    _scene.add(_tubeBetween(top,hi,CH_W*0.45,COL_CHANNEL,0.45));
+    /* 포트 연결 개방 수로 */
+    _channelSeg(lo,bot);
+    _channelSeg(top,hi);
+    /* 펌프 기계실 — 적색 하우징 + 모터 (전원=에너지를 공급하는 기계임을 드러냄) */
+    var houseMat=new THREE.MeshStandardMaterial({color:COL_PUMP,roughness:0.55,metalness:0.25});
+    var house=new THREE.Mesh(new THREE.BoxGeometry(0.95,0.75,0.8),houseMat);
+    house.position.set(center.x+0.95, -0.13, center.z); _scene.add(house);
+    var motor=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.26,0.55,14),bandMat);
+    motor.rotation.z=Math.PI/2;
+    motor.position.set(center.x+0.95, 0.38, center.z); _scene.add(motor);
 
-    /* 임펠러(나선 오거) — 굵고 뚜렷하게, 중심축 포함 */
+    /* 임펠러(나선 양수기 오거) — 강철 스크류 */
     var grp=new THREE.Group(); grp.position.copy(shaft.position);
     var augerCore=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,shaftH*0.95,8),
-              new THREE.MeshStandardMaterial({color:0xbfe0ff,roughness:0.4,metalness:0.4}));
+              new THREE.MeshStandardMaterial({color:0x6e7a88,roughness:0.4,metalness:0.35}));
     grp.add(augerCore);
-    var augerMat=new THREE.MeshStandardMaterial({color:0xa7d0ff,roughness:0.35,metalness:0.35,
-                  emissive:0x2a5a90,emissiveIntensity:0.25,side:THREE.DoubleSide});
+    var augerMat=new THREE.MeshStandardMaterial({color:COL_STEEL,roughness:0.4,metalness:0.3,
+                  side:THREE.DoubleSide});
     var turns=4, perTurn=10, hAug=Math.max(0.4,shaftH*0.95);
     for(var i=0;i<turns*perTurn;i++){
       var frac=i/(turns*perTurn);
@@ -742,80 +844,81 @@ App.AnalogyRenderer=(function(){
     _dynamics.push({grp:grp,rotor:rotor,kind:'pump',comp:c,cur:pm,axis:'y',backEMF:isBackEMF});
   }
 
-  /* 축전기 → 탄성 막(다이어프램) 탱크
-   *   좌우 두 탱크가 가운데 고무막으로 막혀 있다. 물(전하)은 막을 통과하지 못하지만,
-   *   한쪽으로 밀려오면 막이 볼록하게 휘며 반대쪽을 밀어낸다(변위 전류).
-   *   충전될수록 막이 더 부풀고 역압이 커져 흐름이 느려지다 평형서 정지.
-   *   - 막 변위 ∝ 충전량 Q(t) (0 → 최대)
-   *   - 입자(전류)는 막 면에서 멈춘다. */
+  /* 축전기 → 저수탑(Storage Tank) — 비유 방식 교체
+   *   기존 '누운 유리통+고무막'은 기계 부품처럼 보여 수로 언어와 어긋났다.
+   *   이 장면의 핵심 문법(높이=전압)을 그대로 쓰는 '물이 차오르는 저수탑'으로 교체:
+   *   - 수위(저수면 높이) = 축전기 전압 V_C(t) : 낮은 수로 높이에서 시작해 차오른다
+   *   - 저장 수량 = 전하량 Q = C·V
+   *   - 수위가 유입 수로 높이에 닿으면(V_C = V) 수압 평형 → 흐름 정지 = DC 차단
+   *   충전 전류가 흐르는 동안만 물이 들어오고, 가득 차면 멈추는 모습이
+   *   RC 충전 곡선 i(t)=i0·e^{−t/τ} 와 그대로 대응된다. */
   function _buildCapacitor(c){
     var ports=App.Geo.getCompPorts(c);
     var pA=_portPos(c,ports[0]), pB=_portPos(c,ports[1]);
     var center=_compCenter(c);
 
-    /* 받침대 (축전기색) */
-    _addBaseDisk(center, 1.2, COL_DAM);
+    /* 석조 기초 */
+    _addBaseDisk(center, 1.3);
 
-    /* 흐름 축 = X축(좌→우 포트 방향). 두 탱크를 center 좌우(±xHalf)에 두고,
-     *   막은 가운데(x=center.x). 입자(전류)는 X 방향으로 흐른다. */
-    var tankR=0.78;          // 탱크 반경
-    var xHalf=0.95;          // 막에서 각 탱크 끝까지 거리
-    var caseMat=new THREE.MeshStandardMaterial({color:COL_DAM,roughness:0.55,metalness:0.2,
-                  transparent:true,opacity:0.30,side:THREE.DoubleSide});
+    var hiY=Math.max(pA.y,pB.y), loY=Math.min(pA.y,pB.y);
+    var tankR=1.0;                              // 저수탑 반경 (펌프관보다 뚱뚱하게 — 구분)
+    var tankBot=Math.max(-0.42, loY-0.7);       // 탱크 바닥 (지면 위)
+    var tankTop=hiY+0.45;                       // 탱크 상단 (유입 수로보다 약간 위)
+    var tankH=Math.max(0.8, tankTop-tankBot);
 
-    /* 좌우 탱크(투명 원통) — 흐름 축(x)을 따라 누운 통 */
-    function tank(xc){
-      var t=new THREE.Mesh(new THREE.CylinderGeometry(tankR,tankR,xHalf,20,1,true),caseMat);
-      t.rotation.z=Math.PI/2;                  // 통을 x축으로 눕힘
-      t.position.set(center.x+xc, center.y, center.z);
-      _scene.add(t);
-    }
-    tank(-xHalf/2 - 0.05);
-    tank( xHalf/2 + 0.05);
-    /* 양 끝 마개(극판) */
-    var plateMat=new THREE.MeshStandardMaterial({color:COL_DAM,roughness:0.5,metalness:0.35,
-                   emissive:COL_DAM,emissiveIntensity:0.2});
-    [-xHalf-0.05, xHalf+0.05].forEach(function(xc){
-      var plate=new THREE.Mesh(new THREE.CylinderGeometry(tankR*1.05,tankR*1.05,0.12,20),plateMat);
-      plate.rotation.z=Math.PI/2;
-      plate.position.set(center.x+xc, center.y, center.z);
-      _scene.add(plate);
+    /* 유리 탱크 벽 — 수위가 보이는 투명 원통 */
+    var glassMat=new THREE.MeshStandardMaterial({color:COL_GLASS,roughness:0.5,metalness:0,
+                  transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false});
+    var wallMesh=new THREE.Mesh(new THREE.CylinderGeometry(tankR,tankR,tankH,22,1,true),glassMat);
+    wallMesh.position.set(center.x,tankBot+tankH/2,center.z);
+    _scene.add(wallMesh);
+    /* 콘크리트 바닥판 + 강철 테 (아래·위·유입 수위선) */
+    var slab=new THREE.Mesh(new THREE.CylinderGeometry(tankR*1.08,tankR*1.14,0.16,22),_stoneMat());
+    slab.position.set(center.x,tankBot-0.08,center.z);
+    _scene.add(slab);
+    var bandMat=new THREE.MeshStandardMaterial({color:COL_STEEL,roughness:0.4,metalness:0.35});
+    [tankBot+0.08, tankTop-0.06].forEach(function(by){
+      var band=new THREE.Mesh(new THREE.CylinderGeometry(tankR*1.04,tankR*1.04,0.12,22),bandMat);
+      band.position.set(center.x,by,center.z); _scene.add(band);
     });
+    /* 만수위 표시선 — 유입 수로 높이(=V_C 최대)에 얇은 주황 링 */
+    var fullRing=new THREE.Mesh(new THREE.TorusGeometry(tankR*1.02,0.045,8,26),
+             new THREE.MeshStandardMaterial({color:COL_RUBBER,roughness:0.5,metalness:0.1,
+               emissive:0x701510,emissiveIntensity:0.3}));
+    fullRing.rotation.x=Math.PI/2;
+    fullRing.position.set(center.x,hiY,center.z);
+    _scene.add(fullRing);
 
-    /* 가운데 탄성 막(다이어프램) — 반구를 눌러 만든 볼록 디스크.
-     *   흐름 축(x)으로 볼록 정도(변위)를 표현. 충전량에 따라 매 프레임 갱신. */
-    var membGeo=new THREE.SphereGeometry(tankR*0.92,20,14);
-    var membMat=new THREE.MeshStandardMaterial({color:0xff7e6b,roughness:0.45,metalness:0.1,
-                  emissive:0x802018,emissiveIntensity:0.25,side:THREE.DoubleSide});
-    var memb=new THREE.Mesh(membGeo,membMat);
-    memb.scale.set(0.18,1,1);                  // 납작한 디스크(x방향 두께) — 초기 평평에 가깝게
-    memb.position.set(center.x, center.y, center.z);
-    _scene.add(memb);
-    /* 막 테두리 링(고정부) — YZ 평면에 위치하도록 x축 정렬 */
-    var ring=new THREE.Mesh(new THREE.TorusGeometry(tankR*0.92,0.06,8,24),
-             new THREE.MeshStandardMaterial({color:0xcc5040,roughness:0.5,metalness:0.2}));
-    ring.rotation.y=Math.PI/2;                  // 링을 YZ 평면으로 (흐름축에 수직)
-    ring.position.set(center.x, center.y, center.z);
-    _scene.add(ring);
+    /* 저장수 — 수위 애니메이션 (단위 높이 원통을 y 스케일로 늘림) */
+    var water=new THREE.Mesh(new THREE.CylinderGeometry(tankR*0.9,tankR*0.9,1,20),_waterMat(0.85));
+    var h0=Math.max(0.05,loY-tankBot);          // 초기 수위 = 낮은 수로 높이 (V_C=0)
+    water.scale.y=h0;
+    water.position.set(center.x,tankBot+h0/2,center.z);
+    _scene.add(water);
 
-    /* 입출력 연결관 (포트 → 탱크 양 끝) */
-    _scene.add(_tubeBetween(pA,new THREE.Vector3(center.x,pA.y,center.z),CH_W*0.45,COL_CHANNEL,0.45));
-    _scene.add(_tubeBetween(pB,new THREE.Vector3(center.x,pB.y,center.z),CH_W*0.45,COL_CHANNEL,0.45));
+    /* 입출력 연결 개방 수로 (포트 → 탱크 벽) */
+    _channelSeg(pA,new THREE.Vector3(center.x,pA.y,center.z));
+    _channelSeg(new THREE.Vector3(center.x,pB.y,center.z),pB);
 
     /* 충전 전류 레인 — branchModel: i0>0, iinf=0.
-     *   레인 점 [ports[0] → 막 직전 → 막 직전 → ports[1]] : 입자는 막 양쪽에서
-     *   밀려오지만 막을 통과하지 못하므로, 막 면(z=center.z) 근처에서 모이게 한다.
-     *   (시각적으로 막 양쪽에 입자가 쌓이는 효과) */
+     *   레인은 탱크를 관통해 지나간다(회로 전류는 양쪽 극판 모두에 흐르므로).
+     *   수위가 차오르며 i(t)→0 이 되면 입자도 함께 멈춘다. */
     var cm=(_branchModel&&_branchModel.byComp)?_branchModel.byComp[c.id]:null;
     var cIabs=cm?Math.abs(cm.i0):0;
     var lane=_addLane([pA.clone(),new THREE.Vector3(center.x,pA.y,center.z),
                        new THREE.Vector3(center.x,pB.y,center.z),pB.clone()],
                       _compLaneDir(c),'comp',c,cm,cIabs);
-    /* 막 변위 애니메이션용 등록 */
-    _dynamics.push({kind:'cap',comp:c,memb:memb,cur:cm,baseScaleX:0.18,maxBulge:1.5});
+    /* 수위 애니메이션용 등록 — 충전량 ∝ 수위 (loY → hiY) */
+    _dynamics.push({kind:'cap',comp:c,water:water,cur:cm,
+                    botY:tankBot,loY:loY,hiY:hiY});
   }
 
-  /* 인덕터 → 소용돌이 나선 수로 */
+  /* 인덕터 → 무거운 플라이휠 수차 (과감한 대응 변경)
+   *   기존 '소용돌이 나선'은 인덕터의 본질(관성: 전류 변화를 막음)이 드러나지 않았다.
+   *   수력학 표준 비유인 '흐름 속 무거운 바퀴'로 교체:
+   *   물길 한가운데 잠긴 패들이 육중한 주철 플라이휠에 붙어 있다.
+   *   - 가동 시: 바퀴가 무거워 천천히 가속 → 유속도 서서히 상승 (i(t) 지수 상승)
+   *   - 회전 각운동량 = L·i (자속쇄교수 NΦ). 흐름이 끊기려 하면 관성이 흐름을 유지시킨다. */
   function _buildInductor(c){
     var ports=App.Geo.getCompPorts(c);
     var pA=_portPos(c,ports[0]), pB=_portPos(c,ports[1]);
@@ -824,65 +927,105 @@ App.AnalogyRenderer=(function(){
     var I=Math.abs((sr&&sr.branchCurrents&&sr.branchCurrents[c.id])||0);
     var midY=(pA.y+pB.y)/2;
 
-    /* 받침대 (인덕터색) */
-    _addBaseDisk(center, 1.15, COL_VORTEX);
+    /* 석조 기초 */
+    _addBaseDisk(center, 1.15);
 
-    /* 나선 튜브: 서브클래싱 없이 내장 CatmullRomCurve3 사용 (버전 안전) — 굵게 */
-    var R=1.05, turns=4, height=1.9, NSEG=80;
-    var spiralPts=[];
-    for(var si=0;si<=NSEG;si++){
-      var tt=si/NSEG, ang=tt*turns*Math.PI*2;
-      spiralPts.push(new THREE.Vector3(Math.cos(ang)*R,(tt-0.5)*height,Math.sin(ang)*R));
-    }
-    var curve=new THREE.CatmullRomCurve3(spiralPts);
-    var tubeGeo=new THREE.TubeGeometry(curve,120,0.22,10,false);
-    /* 반투명으로 복원 — 내부 물(전류) 흐름이 보이도록 */
-    var tube=new THREE.Mesh(tubeGeo,new THREE.MeshStandardMaterial({color:COL_VORTEX,roughness:0.4,metalness:0.2,
-              transparent:true,opacity:0.4}));
-    var grp=new THREE.Group(); grp.position.set(center.x,midY,center.z); grp.add(tube);
+    /* 흐름 방향 (수평 단위벡터) */
+    var fdx=pB.x-pA.x, fdz=pB.z-pA.z;
+    var fl=Math.hypot(fdx,fdz)||1; fdx/=fl; fdz/=fl;
+
+    /* 관통 수로: 포트 → 휠 피트(수반) 가장자리 */
+    var inEnd =new THREE.Vector3(center.x-fdx*0.72,pA.y,center.z-fdz*0.72);
+    var outEnd=new THREE.Vector3(center.x+fdx*0.72,pB.y,center.z+fdz*0.72);
+    _channelSeg(pA,inEnd);
+    _channelSeg(outEnd,pB);
+    /* 바퀴가 잠기는 수반(휠 피트) */
+    _scene.add(_bendBasin(new THREE.Vector3(center.x,midY,center.z)));
+
+    /* 방향 그룹: 로컬 +Z = 흐름 방향, 휠은 로컬 X축 둘레로 회전 */
+    var flyR=1.3;
+    var grp=new THREE.Group();
+    grp.position.set(center.x, midY+flyR*0.62, center.z);
+    grp.rotation.order='YXZ';
+    grp.rotation.y=Math.atan2(fdx,fdz);
     _scene.add(grp);
-
-    /* 입출력 연결관 + 단자(터미널) */
-    _scene.add(_tubeBetween(pA,new THREE.Vector3(center.x,midY+height/2,center.z),CH_W*0.45,COL_CHANNEL,0.45));
-    _scene.add(_tubeBetween(new THREE.Vector3(center.x,midY-height/2,center.z),pB,CH_W*0.45,COL_CHANNEL,0.45));
-    var termMat=new THREE.MeshStandardMaterial({color:COL_VORTEX,roughness:0.5,metalness:0.3});
-    [midY+height/2, midY-height/2].forEach(function(ty){
-      var term=new THREE.Mesh(new THREE.SphereGeometry(0.2,10,8),termMat);
-      term.position.set(center.x,ty,center.z); _scene.add(term);
+    var wheel=new THREE.Group(); grp.add(wheel);
+    var ironMat=new THREE.MeshStandardMaterial({color:COL_IRON,roughness:0.45,metalness:0.35});
+    var ironDk =new THREE.MeshStandardMaterial({color:0x6b7580,roughness:0.5,metalness:0.3});
+    /* 육중한 플라이휠 원판 — 질량감의 핵심 */
+    var disk=new THREE.Mesh(new THREE.CylinderGeometry(flyR*0.82,flyR*0.82,0.34,26),ironDk);
+    disk.rotation.z=Math.PI/2;                 // 축을 로컬 X로
+    wheel.add(disk);
+    /* 두꺼운 외륜(무게 림) */
+    var rim=new THREE.Mesh(new THREE.TorusGeometry(flyR,0.16,10,30),ironMat);
+    rim.rotation.y=Math.PI/2;                  // 토러스 평면을 YZ로 (축=X)
+    wheel.add(rim);
+    /* 무게 강조 볼트 — 림 안쪽 원판 둘레의 작은 돌기 */
+    for(var bi=0;bi<8;bi++){
+      var ba=(bi/8)*Math.PI*2;
+      var bolt=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.36,8),ironMat);
+      bolt.rotation.z=Math.PI/2;
+      bolt.position.set(0,Math.cos(ba)*flyR*0.55,Math.sin(ba)*flyR*0.55);
+      wheel.add(bolt);
+    }
+    /* 패들 — 물살을 받는 강판 (아래쪽이 수반 물에 잠긴다) */
+    for(var i=0;i<8;i++){
+      var a=(i/8)*Math.PI*2;
+      var pd=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.08,flyR*0.52),ironMat);
+      pd.position.set(0,Math.cos(a)*flyR*0.8,Math.sin(a)*flyR*0.8);
+      pd.rotation.x=a-Math.PI/2;
+      wheel.add(pd);
+    }
+    /* 굴대(로컬 X축) */
+    var axle=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,1.9,10),ironMat);
+    axle.rotation.z=Math.PI/2;
+    grp.add(axle);
+    /* 지지 기둥 — 굴대 양 끝을 받치는 석조 필론 (월드 좌표) */
+    var pylMat=new THREE.MeshStandardMaterial({color:COL_STONE_DK,roughness:0.95,metalness:0.02});
+    [-0.9,0.9].forEach(function(off){
+      var px=center.x+(-fdz)*off, pz=center.z+fdx*off;    // 축 방향 = 흐름의 수직
+      var ph=Math.max(0.3,grp.position.y+0.5);
+      var pyl=new THREE.Mesh(new THREE.BoxGeometry(0.28,ph,0.28),pylMat);
+      pyl.position.set(px,-0.5+ph/2,pz);
+      _scene.add(pyl);
     });
 
-    /* 나선 물 레인: 곡선 샘플링 — branchModel: i0=0, iinf>0.
-     *   레인 점 [ports[0]→ports[1]] 순서. 전류 부호로 진행 방향 결정. */
-    var pts=[pA.clone()];
-    for(var s=0;s<=24;s++){
-      var p=curve.getPoint(s/24);
-      pts.push(new THREE.Vector3(center.x+p.x,midY+p.y,center.z+p.z));
-    }
-    pts.push(pB.clone());
+    /* 물 레인: 수로를 따라 직진, 휠 피트 아래 통과 */
     var lm=(_branchModel&&_branchModel.byComp)?_branchModel.byComp[c.id]:null;
-    _addLane(pts,_compLaneDir(c),'comp',c,lm,I);
+    var dirSign=_compLaneDir(c);
+    _addLane([pA.clone(),inEnd.clone(),new THREE.Vector3(center.x,midY,center.z),
+              outEnd.clone(),pB.clone()],dirSign,'comp',c,lm,I);
+
+    /* 동역학 등록: 각속도 ∝ i(t) — 회전수가 곧 전류(관성으로 서서히 상승) */
+    var rotor=_makeRotor(grp.position,flyR,2.2);
+    _dynamics.push({kind:'ind',wheel:wheel,rotor:rotor,comp:c,cur:lm,sgn:dirSign});
   }
 
   /* 분기점 → T자(3way) / 十자(4way) 갈림 수로
    *   중앙 허브에서 실제 포트 방향마다 팔(arm)을 뻗어 분기 형상을 만든다. */
   function _buildJunction(c){
     var center=_compCenter(c);
-    /* 중앙 허브 — 키워서 분기 지점 명확화 */
-    var hub=new THREE.Mesh(new THREE.CylinderGeometry(CH_W*0.95,CH_W*0.95,0.6,18),
-            new THREE.MeshStandardMaterial({color:COL_CHANNEL,roughness:0.6,metalness:0.1,transparent:true,opacity:0.8}));
-    hub.position.copy(center);
-    _scene.add(hub);
+    /* 갈림길 수반 — 개방 원형 물웅덩이 (물이 모였다 갈라지는 지점) */
+    var R=TR_W*0.98;
+    var stone=_stoneMat();
+    /* 바닥 원판 */
+    var bottom=new THREE.Mesh(new THREE.CylinderGeometry(R+0.16,R+0.22,TR_TH,20),stone);
+    bottom.position.set(center.x,center.y-TR_BOT-TR_TH/2,center.z);
+    _scene.add(bottom);
+    /* 낮은 석조 링 벽 (수반 테두리) */
+    var wall=new THREE.Mesh(new THREE.CylinderGeometry(R+0.12,R+0.16,TR_H*0.8,20,1,true),
+             new THREE.MeshStandardMaterial({color:COL_STONE,roughness:0.9,metalness:0.02,side:THREE.DoubleSide}));
+    wall.position.set(center.x,center.y-TR_BOT+TR_H*0.4,center.z);
+    _scene.add(wall);
+    /* 수반의 물 — 위가 트여 표면이 보인다 */
+    var water=new THREE.Mesh(new THREE.CylinderGeometry(R+0.06,R+0.06,TR_BOT+0.06,20),_waterMat());
+    water.position.set(center.x,center.y+(-TR_BOT+0.06)/2,center.z);
+    _scene.add(water);
     /* 각 포트로 팔 뻗기 (T자/十자는 포트 구성 LRB / LRTB 에서 자동 결정) */
     App.Geo.getCompPorts(c).forEach(function(p){
       var pp=_portPos(c,p);
       _channelSeg(center.clone(), pp);
     });
-    /* 분기 표식: 허브 위 작은 구 */
-    var cap=new THREE.Mesh(new THREE.SphereGeometry(CH_W*0.55,12,10),
-            new THREE.MeshStandardMaterial({color:COL_NODE,roughness:0.5,metalness:0.2,
-              emissive:COL_NODE,emissiveIntensity:0.25,transparent:true,opacity:0.85}));
-    cap.position.set(center.x,center.y+0.35,center.z);
-    _scene.add(cap);
   }
 
   function _buildScene(){
@@ -916,9 +1059,9 @@ App.AnalogyRenderer=(function(){
       }
     });
 
-    /* 물 입자 메쉬 풀 생성 */
-    _sharedGeo=new THREE.SphereGeometry(0.16,8,8);
-    var pmat=new THREE.MeshStandardMaterial({color:0x9fd8ff,emissive:0x1a5fa0,emissiveIntensity:0.6,roughness:0.2});
+    /* 물 입자 메쉬 풀 생성 — 수면 위 물거품(포말)처럼 밝은 방울 */
+    _sharedGeo=new THREE.SphereGeometry(0.15,8,8);
+    var pmat=new THREE.MeshStandardMaterial({color:COL_WATER_HI,emissive:0x9adcff,emissiveIntensity:0.45,roughness:0.25});
     _lanes.forEach(function(lane){
       lane.parts.forEach(function(p){
         var m=new THREE.Mesh(_sharedGeo,pmat);
@@ -948,9 +1091,9 @@ App.AnalogyRenderer=(function(){
       var total=0;
       for(var i=0;i<lane.pts.length-1;i++){ var l=lane.pts[i].distanceTo(lane.pts[i+1]); lane.seg[i]=l; total+=l; }
       lane.total=total>1e-4?total:lane.total;
-      /* 수로 튜브 재배치 */
-      if(d.tube1) _updateTube(d.tube1, lane.pts[0], lane.pts[1], CH_W*0.5);
-      if(d.tube2) _updateTube(d.tube2, lane.pts[1], lane.pts[2], CH_W*0.5);
+      /* 수로 트로프 재배치 */
+      if(d.tube1) _orientTrough(d.tube1, lane.pts[0], lane.pts[1]);
+      if(d.tube2) _orientTrough(d.tube2, lane.pts[1], lane.pts[2]);
       if(d.bendMesh) d.bendMesh.position.y=yBend;
     });
     /* 저항 물레방아 낙차 시변 갱신 (#3): R 양단 v(t)로 hi/lo·휠·낙차튜브 높이 갱신 */
@@ -961,13 +1104,27 @@ App.AnalogyRenderer=(function(){
       var yMid=(yHi+yLo)/2;
       w.grp.position.y=yMid;
       if(w.rotor){ w.rotor._py=yMid; }
-      var hi=new THREE.Vector3(w.cx,yHi,w.cz);
-      var lo=new THREE.Vector3(w.cx,yLo,w.cz);
-      var top=new THREE.Vector3(w.cx,yHi,w.cz);  // 휠 상단 연결
+      /* 유입·유출 수로: 포트 위치 → 바퀴 중심 위·아래 (수평 트로프) */
+      var hiP=new THREE.Vector3(w.hiX!=null?w.hiX:w.cx,yHi,w.hiZ!=null?w.hiZ:w.cz);
+      var loP=new THREE.Vector3(w.loX!=null?w.loX:w.cx,yLo,w.loZ!=null?w.loZ:w.cz);
+      var top=new THREE.Vector3(w.cx,yHi,w.cz);
       var bot=new THREE.Vector3(w.cx,yLo,w.cz);
-      var mid=new THREE.Vector3(w.cx,yMid,w.cz);
-      if(w.tube1) _updateTube(w.tube1, hi, mid, CH_W*0.45);
-      if(w.tube2) _updateTube(w.tube2, mid, lo, CH_W*0.45);
+      if(w.tube1) _orientTrough(w.tube1, hiP, top);
+      if(w.tube2) _orientTrough(w.tube2, bot, loP);
+      /* 폭포 물기둥: 위 수로 끝 → 바퀴 상단, 바퀴 하단 → 아래 수로 */
+      if(w.fall){
+        var fEnd=new THREE.Vector3(w.cx,Math.min(yHi-0.05,yMid+(w.wheelR||1.2)*0.85),w.cz);
+        _updateTube(w.fall, top, fEnd, 0.17);
+      }
+      if(w.fall2){
+        var f2S=new THREE.Vector3(w.cx,Math.max(yLo+0.05,yMid-(w.wheelR||1.2)*0.85),w.cz);
+        _updateTube(w.fall2, f2S, bot, 0.17);
+      }
+      /* 석조 지지 기둥 높이 (지면 → 굴대) */
+      if(w.legs){
+        var legH=Math.max(0.3,yMid+0.5);
+        w.legs.forEach(function(leg){ leg.scale.y=legH; leg.position.y=-0.5+legH/2; });
+      }
       /* 레인 점 높이 갱신: [hi, top, arc(N+1점), bot, lo] 구조.
        *   arc 는 휠 중심(yMid) 둘레 좌측 외주(90°→270°)를 따라 재배치. */
       var L=w.lane;
@@ -1018,7 +1175,7 @@ App.AnalogyRenderer=(function(){
       w.rotor.omega+=(targetOmega-w.rotor.omega)*_clamp(k*dt,0,1);
       w.rotor.angle+=w.rotor.omega*dt;
       w.grp.rotation.z=w.rotor.angle;
-      w.glow.material.opacity=_playing?_clamp(pNow*0.55,0,0.55):0;
+      w.glow.material.opacity=_playing?_clamp(pNow*0.22,0,0.22):0;
 
       /* 물 튀김: 휠이 도는 속도에 비례해 하단(물이 떨어지는 지점)에서 물방울 분출 */
       if(w.splash){
@@ -1046,20 +1203,28 @@ App.AnalogyRenderer=(function(){
         d.rotor.omega+=(targetO-d.rotor.omega)*_clamp(7.0*dt,0,1);
         d.rotor.angle+=d.rotor.omega*dt;
         d.grp.rotation.y=d.rotor.angle;
+      } else if(d.kind==='ind'){
+        /* 플라이휠 각속도 ∝ i(t) — 무거워서 천천히 가속·감속 (관성=인덕턴스) */
+        var iiL=_playing?_branchCurrentModel(d.cur,t):0;
+        var trL=_clamp(Math.abs(iiL)/_maxI,0,1);
+        var tOmL=-d.sgn*trL*IND_OMEGA_MAX;
+        d.rotor.omega+=(tOmL-d.rotor.omega)*_clamp(3.0*dt,0,1);
+        d.rotor.angle+=d.rotor.omega*dt;
+        d.wheel.rotation.x=d.rotor.angle;
       } else if(d.kind==='cap'){
-        /* 막 변위 = 충전량 Q(t) ∝ (1 − i_C(t)/i_C0). 충전될수록 막이 볼록하게 부푼다. */
+        /* 수위 = 충전량 Q(t) ∝ (1 − i_C(t)/i_C0).
+         *   낮은 수로 높이(loY, V_C=0)에서 유입 수로 높이(hiY, V_C=V)까지 차오른다. */
         var charge=0;
         if(_playing && d.cur && Math.abs(d.cur.i0)>1e-15){
           var iC=_branchCurrentModel(d.cur,t);
           charge=1-Math.abs(iC)/Math.abs(d.cur.i0);
         }
         charge=_clamp(charge,0,1);
-        if(d.memb){
-          /* 막을 흐름축(x)으로 볼록하게: 기본 두께 + 충전량에 비례한 부풀음 */
-          var bulge=d.baseScaleX + charge*d.maxBulge;
-          d.memb.scale.x=bulge;
-          /* 충전될수록 붉게(긴장) — emissive 강조 */
-          if(d.memb.material) d.memb.material.emissiveIntensity=0.25+charge*0.5;
+        if(d.water){
+          var surf=d.loY+(d.hiY-d.loY)*charge;      // 현재 수면 높이
+          var hW=Math.max(0.05,surf-d.botY);
+          d.water.scale.y=hW;
+          d.water.position.y=d.botY+hW/2;
         }
       }
     });
@@ -1202,7 +1367,7 @@ App.AnalogyRenderer=(function(){
     rec.tex=tex;
     var mat=new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false,depthWrite:false});
     var sp=new THREE.Sprite(mat);
-    var sc=0.0095; sp.scale.set(W*sc, H*sc, 1);
+    var sc=0.008; sp.scale.set(W*sc, H*sc, 1);
     sp.position.set(pos.x, pos.y+1.5, pos.z);
     sp.renderOrder=999;
     sp.visible=_labelsVisible;
@@ -1267,7 +1432,7 @@ App.AnalogyRenderer=(function(){
     tex.minFilter=THREE.LinearFilter;
     var mat=new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false,depthWrite:false});
     var sp=new THREE.Sprite(mat);
-    sp.scale.set(300*0.0072, 120*0.0072, 1);  // 월드 크기 약간 키움
+    sp.scale.set(300*0.0058, 120*0.0058, 1);
     sp.position.set(pos.x, pos.y+0.85, pos.z);
     sp.renderOrder=1000;
     sp.visible=_labelsVisible;
@@ -1615,7 +1780,11 @@ App.AnalogyRenderer=(function(){
       if(w.splash){w.splash.drops.forEach(function(d){d.life=0;d.mesh.visible=false;});w.splashTimer=0;}});
     _dynamics.forEach(function(d){
       if(d.kind==='pump'){d.rotor.angle=0;d.rotor.omega=0;if(d.rotor.body)d.rotor.body.angularVelocity.set(0,0,0);d.grp.rotation.y=0;}
-      if(d.kind==='cap'&&d.memb){d.memb.scale.x=d.baseScaleX; if(d.memb.material)d.memb.material.emissiveIntensity=0.25;}
+      if(d.kind==='ind'){d.rotor.angle=0;d.rotor.omega=0;if(d.rotor.body)d.rotor.body.angularVelocity.set(0,0,0);d.wheel.rotation.x=0;}
+      if(d.kind==='cap'&&d.water){
+        var hW0=Math.max(0.05,d.loY-d.botY);
+        d.water.scale.y=hW0; d.water.position.y=d.botY+hW0/2;
+      }
     });
     _lanes.forEach(function(lane){
       var n=lane.parts.length;
@@ -1726,14 +1895,15 @@ App.AnalogyRenderer=(function(){
     _renderer.setSize(W,H);
 
     _scene=new THREE.Scene();
-    /* 안개·조명도 밝은 지면 톤으로 (소자 고유색은 그대로 유지) */
-    _scene.fog=new THREE.FogExp2(0xeceef1,0.012);
+    /* 야외 하늘빛 안개 — 맑은 날 들판의 원경 톤 */
+    _scene.fog=new THREE.FogExp2(0xdfeef8,0.011);
     _camera=new THREE.PerspectiveCamera(48,W/H,0.1,500);
 
-    /* 조명 */
-    _scene.add(new THREE.AmbientLight(0xf2f4f7,0.85));
-    var dir=new THREE.DirectionalLight(0xffffff,0.85); dir.position.set(6,14,8); _scene.add(dir);
-    var dir2=new THREE.DirectionalLight(0xd8dee8,0.45); dir2.position.set(-8,6,-6); _scene.add(dir2);
+    /* 조명 — 야외 자연광: 하늘(위)·잔디 반사(아래) 반구광 + 따뜻한 태양광.
+     *   합산 광량을 1.3x 안쪽으로 눌러 콘크리트·잔디 질감이 날아가지 않게 한다. */
+    _scene.add(new THREE.HemisphereLight(0xcfe4fa,0xaab895,0.55));
+    var dir=new THREE.DirectionalLight(0xfff0d8,0.8); dir.position.set(6,14,8); _scene.add(dir);
+    var dir2=new THREE.DirectionalLight(0xc8daea,0.25); dir2.position.set(-8,6,-6); _scene.add(dir2);
 
     /* Cannon 물리 엔진 준비 (있으면) */
     _haveCannon=(typeof CANNON!=='undefined');
