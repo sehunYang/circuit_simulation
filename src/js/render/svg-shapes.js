@@ -229,10 +229,16 @@ App.SN=(function(){
   Recorder.prototype.fill=function(){
     this._emit('fill="'+this.fillStyle+'" stroke="none"');
   };
-  /* 텍스트는 경로가 아니므로 별도 조각으로 */
+  /* 텍스트는 경로가 아니므로 별도 조각으로.
+   * o.width(측정된 글자 폭)를 주면 글자 상자까지 bbox 에 포함시킨다 —
+   * 앵커 점만 넣으면 viewBox·PNG 크롭에서 라벨이 잘린다. */
   Recorder.prototype.text=function(t,x,y,size,opt){
     var o=opt||{};
     var p=this._pt(x,y); this._grow(p.x,p.y);
+    if(o.width){
+      var s=this._scale(), hw=o.width*s/2, hh=size*s/2;
+      this._grow(p.x-hw,p.y-hh); this._grow(p.x+hw,p.y+hh);
+    }
     this.parts.push('<text x="'+_n(p.x)+'" y="'+_n(p.y)+'"'
       +' font-family="'+_esc(o.ko?TOKENS.fontKo:TOKENS.font)+'"'
       +' font-size="'+_n(size)+'"'+(o.italic?' font-style="italic"':'')

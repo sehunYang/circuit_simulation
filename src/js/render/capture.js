@@ -3,22 +3,26 @@
 var App=window.App;
 
 /* ════════════════════════════════════════════════════════════════════
- * App.Capture — SVG 선화 내보내기 (수능 지면 규격)
+ * App.Capture — 회로 선화 내보내기 (수능 지면 규격)
  *
- *   화면 렌더와 **같은 심볼 그리기 함수**(App.Symbols.draw)를 통과시켜
- *   <path d="…"> 를 찍어낸다. ctx 자리에 App.SN.Recorder 를 넣으면
- *   같은 코드가 Canvas 대신 SVG 경로를 쌓는다 →
- *   보이는 그림과 내보낸 벡터가 기하를 100% 공유한다.
+ *   화면 렌더와 **같은 심볼 그리기 함수**(App.Symbols.draw)를 통과시킨다.
+ *   그리기 대상(g)은 두 가지를 받는다:
+ *     · App.SN.Recorder      → <path d="…"> 누적 (SVG · bbox 계산용)
+ *     · CanvasRenderingContext2D → 픽셀 (PNG 저장용)
+ *   Recorder 가 Canvas2D 경로 API 를 흉내내므로 _drawScene 한 벌로 둘 다
+ *   처리되고, 보이는 그림과 내보낸 결과가 기하를 100% 공유한다.
  *
  *   출력은 흰 바탕 · 검정 선 — 학습지·시험지에 그대로 붙일 수 있는 형태.
+ *   촬영 버튼은 PNG 를 저장한다(buildSceneSVG 는 같은 장면의 벡터 형태).
  *
  *   좌표계: 뷰포트와 무관하게 **scale=1, offset=0** 으로 고정해서 그린다.
  *           (그리드 1칸 = CELL_SIZE) 따라서 화면을 얼마나 확대해 두었든
- *           같은 회로는 항상 같은 SVG 를 낸다.
+ *           같은 회로는 항상 같은 결과를 낸다.
  * ════════════════════════════════════════════════════════════════════ */
 App.Capture=(function(){
 
-  var CS=null;   /* 셀 크기 (내보내기 기준) — build 시 CELL_SIZE 로 고정 */
+  var CS=CELL_SIZE;   /* 셀 크기 (내보내기 기준) */
+  var PNG_SCALE=3;    /* PNG 배율 — 확대해 붙여도 선이 뭉개지지 않게 */
 
   /* 소자 중심 (내보내기 좌표) */
   function _center(comp){
@@ -30,21 +34,28 @@ App.Capture=(function(){
     return{x:g.x*CS, y:g.y*CS};
   }
 
+  /* 라벨 폭 측정용 스크래치 컨텍스트 (bbox 계산에 필요) */
+  var _measureCtx=null;
+  function _measure(text,fs){
+    if(!_measureCtx) _measureCtx=document.createElement('canvas').getContext('2d');
+    _measureCtx.font='italic '+fs+'px '+App.SN.TOKENS.font;
+    return _measureCtx.measureText(text).width;
+  }
+
   /**
-   * 현재 회로를 SVG 문자열로 직렬화.
+   * 장면 그리기 — g 는 App.SN.Recorder 또는 2D 컨텍스트.
    *   그리는 순서: 도선 → 소자 심볼 → 특성값 라벨
-   *   편집 보조 표시(선택 박스·포트 점·격자)는 그림이 아니므로 제외한다.
+   *   편집 보조 표시(선택 박스·포트 점·격자)와 실행 모드 표시(전자·전류
+   *   화살표·전류 배지)는 그림이 아니므로 제외한다.
    */
-  function buildSceneSVG(){
-    CS=CELL_SIZE;
+  function _drawScene(g){
     var SN=App.SN;
-    var rec=new SN.Recorder();
     var lw=Math.max(1.5,CS*0.042);   /* 심볼 선 굵기 (화면과 같은 규칙) */
 
     /* ── 1. 도선 ── */
-    rec.strokeStyle=SN.TOKENS.ink;
-    rec.lineWidth=SN.TOKENS.lwWire;
-    rec.lineCap='round'; rec.lineJoin='round';
+    g.strokeStyle=SN.TOKENS.ink;
+    g.lineWidth=SN.TOKENS.lwWire;
+    g.lineCap='round'; g.lineJoin='round';
     App.State.wires.forEach(function(wire){
       var from=App.State.getComponent(wire.fromId);
       var to  =App.State.getComponent(wire.toId);
@@ -52,10 +63,10 @@ App.Capture=(function(){
       var p1=_port(from,wire.fromPort);
       var p2=_port(to,  wire.toPort);
       var path=App.Geo.calcWirePath(p1.x,p1.y,p2.x,p2.y,wire.direction);
-      rec.beginPath();
-      rec.moveTo(path[0].x,path[0].y);
-      for(var i=1;i<path.length;i++) rec.lineTo(path[i].x,path[i].y);
-      rec.stroke();
+      g.beginPath();
+      g.moveTo(path[0].x,path[0].y);
+      for(var i=1;i<path.length;i++) g.lineTo(path[i].x,path[i].y);
+      g.stroke();
     });
 
     /* ── 2. 소자 심볼 ── */
@@ -66,21 +77,21 @@ App.Capture=(function(){
        * 다리를 뻗는다. 지면에 붕 뜬 짧은 선이 남지 않게 하기 위한 것으로,
        * 기존 촬영 동작을 그대로 유지한 것이다 (심볼 디자인 변경 아님). */
       if(comp.type===TYPE.JUNCTION_3||comp.type===TYPE.JUNCTION_4){
-        rec.strokeStyle=SN.TOKENS.ink; rec.lineWidth=lw; rec.lineCap='round';
+        g.strokeStyle=SN.TOKENS.ink; g.lineWidth=lw; g.lineCap='round';
         App.State.wires.forEach(function(w){
           var isFrom=(w.fromId===comp.id), isTo=(w.toId===comp.id);
           if(!isFrom&&!isTo) return;
           var pp=_port(comp,isFrom?w.fromPort:w.toPort);
-          rec.beginPath(); rec.moveTo(c.x,c.y); rec.lineTo(pp.x,pp.y); rec.stroke();
+          g.beginPath(); g.moveTo(c.x,c.y); g.lineTo(pp.x,pp.y); g.stroke();
         });
         /* 중심 접점 — 심볼과 같은 반지름 규약 (r·0.10, r=CS/2) */
-        rec.fillStyle=SN.TOKENS.ink;
-        rec.beginPath(); rec.arc(c.x,c.y,CS*0.05,0,Math.PI*2); rec.fill();
+        g.fillStyle=SN.TOKENS.ink;
+        g.beginPath(); g.arc(c.x,c.y,CS*0.05,0,Math.PI*2); g.fill();
         return;
       }
 
       /* 그 외 소자: 화면과 **같은** 그리기 함수를 그대로 통과시킨다 */
-      App.Symbols.draw(rec,comp.type,c.x,c.y,CS,comp.rotation,
+      App.Symbols.draw(g,comp.type,c.x,c.y,CS,comp.rotation,
                        {color:SN.TOKENS.ink,lineWidth:lw});
     });
 
@@ -93,29 +104,64 @@ App.Capture=(function(){
         var c=_center(comp);
         var fs=App.Symbols.labelFontSize(CS);
         var ly=c.y+CS*App.Symbols.labelOffsetRatio(comp.type);
-        rec.text(text,c.x,ly+fs*0.5,fs,{italic:true});
+        g.text(text,c.x,ly+fs*0.5,fs,{italic:true,width:_measure(text,fs)});
       });
     }
+  }
 
+  /** 내용 bbox + 여백 (SVG viewBox · PNG 크롭 공통 규칙) */
+  function _sceneBounds(){
+    var rec=new App.SN.Recorder();
+    _drawScene(rec);
+    var b=rec.bb;
+    if(!isFinite(b.x0)) b={x0:0,y0:0,x1:100,y1:100};
+    var pad=Math.max(b.x1-b.x0,b.y1-b.y0)*0.06+12;
+    return{x:b.x0-pad, y:b.y0-pad,
+           w:(b.x1-b.x0)+pad*2, h:(b.y1-b.y0)+pad*2, rec:rec};
+  }
+
+  /** 현재 회로를 SVG 문자열로 직렬화 (벡터가 필요할 때) */
+  function buildSceneSVG(){
+    var rec=new App.SN.Recorder();
+    _drawScene(rec);
     return rec.toSVG();
   }
 
-  /** 촬영 버튼: SVG 파일로 저장 */
+  /** 현재 회로를 흰 바탕 PNG 캔버스로 렌더 */
+  function buildSceneCanvas(scale){
+    var s=scale||PNG_SCALE;
+    var b=_sceneBounds();
+    var cv=document.createElement('canvas');
+    cv.width =Math.max(1,Math.round(b.w*s));
+    cv.height=Math.max(1,Math.round(b.h*s));
+    var ctx=cv.getContext('2d');
+    ctx.fillStyle=App.SN.TOKENS.paper;
+    ctx.fillRect(0,0,cv.width,cv.height);
+    ctx.setTransform(s,0,0,s,0,0);
+    ctx.translate(-b.x,-b.y);
+    /* Recorder 의 text() 에 맞춘 어댑터 — 지면 서체로 글자를 찍는다 */
+    ctx.text=function(t,x,y,size,opt){ App.SN.label(ctx,t,x,y,size,opt); };
+    _drawScene(ctx);
+    return cv;
+  }
+
+  /** 촬영 버튼: PNG 파일로 저장 */
   function captureImage(){
     if(!App.State.components.length&&!App.State.wires.length){
       if(typeof showErrorToast==='function') showErrorToast('내보낼 회로가 없습니다.');
       return;
     }
-    var svg=buildSceneSVG();
-    var blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'});
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a');
-    a.href=url; a.download='circuit_'+Date.now()+'.svg';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(function(){URL.revokeObjectURL(url);},1000);
+    buildSceneCanvas().toBlob(function(blob){
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a');
+      a.href=url; a.download='circuit_'+Date.now()+'.png';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){URL.revokeObjectURL(url);},1000);
+    },'image/png');
   }
 
-  return{buildSceneSVG:buildSceneSVG, captureImage:captureImage};
+  return{buildSceneSVG:buildSceneSVG, buildSceneCanvas:buildSceneCanvas,
+         captureImage:captureImage};
 })();
 
 }());

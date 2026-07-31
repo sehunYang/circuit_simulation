@@ -20,11 +20,6 @@ App.RunRenderer=(function(){
   var ELECTRON_SPEED_MIN     = 8;    // 최소 속도 (px/s)
   var ELECTRON_SPEED_MAX     = 120;  // 최대 속도 (px/s)
   var ELECTRON_RADIUS        = 4;    // 전자 반지름 (px)
-  var ARROW_SIZE             = 9;    // 전류 방향 화살표 크기
-  /* 화살표를 도선에서 옆으로 빼는 거리.
-   * 검정 도선 위에 검정 화살표를 겹치면 "도선이 굵어진 곳"으로만 읽히므로
-   * 나란히 놓아 형태로 구분한다. (edit-renderer 와 같은 규칙) */
-  var ARROW_OFFSET           = Math.round(ARROW_SIZE*0.7+1.5);
   var MAX_PARTICLES          = 50;   // 도선당 최대 파티클 수
 
   var _cv, _ctx;
@@ -32,7 +27,7 @@ App.RunRenderer=(function(){
   var _lastTs = 0;
   var _t = 0;   /* 물리 시간 누산 (초) — AC 순시값 계산용 */
 
-  /* 도선별 파티클 풀 { wireId → {wireId, I, particles:[{t,speed,tail,dir,visible}]} } */
+  /* 도선별 파티클 풀 { wireId → {wireId, I, particles:[{t,speed,dir,visible}]} } */
   var _pools = {};
 
   /* ── 공통 헬퍼 ────────────────────────────────────────────────────
@@ -214,7 +209,7 @@ App.RunRenderer=(function(){
 
   /* ── 파티클 렌더링 ── */
   function _drawParticles(){
-    var W = _cv.width, H = _cv.height;
+    var vs = App.Geo.viewSize(), W = vs.w, H = vs.h;   /* 논리(CSS) 크기 */
 
     Object.keys(_pools).forEach(function(wid){
       var pool = _pools[wid];
@@ -251,53 +246,16 @@ App.RunRenderer=(function(){
     });
   }
 
-  /* ── 전류 방향 화살표 ── */
-  function _drawCurrentArrows(){
-    var sr = App.State.solverResult;
-    if(!sr||!sr.valid) return;
-    /* 토글 off이거나 AC 회로면 화살표 표시 안 함 */
-    if(!App.State.showArrows) return;
-    if(sr.acPhasor) return;
-
-    /* from 부품의 내부 노드 전위 차로 도선 전류 방향 결정 (+1: t=0→1, -1: t=1→0) */
-    App.State.wires.forEach(function(wire){
-      var I = sr.branchCurrents[wire.fromId]||sr.branchCurrents[wire.toId]||0;
-      if(Math.abs(I)<1e-12) return;
-
-      var info = _wirePathInfo(wire);
-      if(!info) return;
-      var path = info.path;
-      var convDir = App.Geo.wireConvDir(wire, sr);
-
-      for(var k=0;k<path.length-1;k++){
-        var sx=path[k].x, sy=path[k].y, ex=path[k+1].x, ey=path[k+1].y;
-        if(Math.hypot(ex-sx,ey-sy)<16) continue;
-        var mx=(sx+ex)/2, my=(sy+ey)/2;
-        var ang=Math.atan2(ey-sy, ex-sx);
-        if(convDir < 0) ang += Math.PI;
-
-        /* 수능 규격 화살표: 속 찬 검정 삼각 화살촉.
-         * 도선 위가 아니라 옆(수평 구간→위, 수직 구간→왼쪽)에 나란히 둔다. */
-        var isHoriz=Math.abs(ex-sx)>Math.abs(ey-sy);
-        _ctx.save();
-        _ctx.translate(mx + (isHoriz?0:-ARROW_OFFSET),
-                       my + (isHoriz?-ARROW_OFFSET:0));
-        _ctx.rotate(ang);
-        _ctx.beginPath();
-        _ctx.moveTo(ARROW_SIZE, 0);
-        _ctx.lineTo(-ARROW_SIZE*0.55, -ARROW_SIZE*0.5);
-        _ctx.lineTo(-ARROW_SIZE*0.55,  ARROW_SIZE*0.5);
-        _ctx.closePath();
-        _ctx.fillStyle=App.SN.TOKENS.ink;
-        _ctx.fill();
-        _ctx.restore();
-      }
-    });
-  }
+  /* ── 전류 방향 화살표는 여기서 그리지 않는다 ──────────────────────
+   * canvas-main(EditRenderer)이 이미 같은 화살표를 그리고 실행 모드에서도
+   * 그대로 보인다. 여기서 또 그리면 두 캔버스에 겹쳐 찍히는데, 두 코드의
+   * 크기 규칙이 달라(EditRenderer 는 확대율 비례, 여기는 고정 9px) 가장자리가
+   * 어긋나 삼각형이 깨져 보였다. 표시 조건도 양쪽이 동일하므로 중복만 제거한다.
+   * ─────────────────────────────────────────────────────────────── */
 
   /* ── 회로 미완성 오버레이 ── */
   function _drawIncompleteOverlay(){
-    var W=_cv.width, H=_cv.height;
+    var vs=App.Geo.viewSize(), W=vs.w, H=vs.h;   /* 논리(CSS) 크기 */
     _ctx.save();
     /* 지면 위 안내 — 흰 바탕을 가리지 않고 살짝 흐리게만 덮는다 */
     _ctx.fillStyle='rgba(255,255,255,0.72)';
@@ -355,14 +313,14 @@ App.RunRenderer=(function(){
       _t += dt;  /* DC: 실시간 누산 */
     }
 
-    _ctx.clearRect(0,0,_cv.width,_cv.height);
+    var vs0=App.Geo.viewSize();
+    _ctx.clearRect(0,0,vs0.w,vs0.h);
 
     if(sr&&sr.valid){
       /* AC 모드: 스케일된 _t로 순시 전류 계산 */
       if(sr.acPhasor) _updatePoolsAC(_t, sr);
       _updateParticles(dt);
       _drawParticles();
-      _drawCurrentArrows();
     } else {
       _drawIncompleteOverlay();
     }
@@ -385,7 +343,7 @@ App.RunRenderer=(function(){
   function stop(){
     if(_rafId!==null){ cancelAnimationFrame(_rafId); _rafId=null; }
     App.Events.off('solver:done', _initPools);
-    if(_cv&&_ctx) _ctx.clearRect(0,0,_cv.width,_cv.height);
+    if(_cv&&_ctx){ var vs1=App.Geo.viewSize(); _ctx.clearRect(0,0,vs1.w,vs1.h); }
   }
 
   return{start:start, stop:stop};

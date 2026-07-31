@@ -203,10 +203,18 @@ App.Symbols=(function(){
     ctx.restore();
   }
 
-  /* drawMini: 사이드바 미니 심볼 (캔버스 중앙에 회전 없이) */
+  /* drawMini: 사이드바 미니 심볼 · 드래그 고스트 (캔버스 중앙에 회전 없이)
+   * 메인 캔버스와 같은 이유로 HiDPI 대응 — 백업 저장소만 배율만큼 키우고
+   * CSS 크기는 원래 논리 크기로 고정한다. 논리 크기는 최초 호출 때의
+   * width/height 속성값이며, 재호출로 배율이 누적되지 않게 보관해 둔다. */
   function drawMini(canvas,type){
+    var w=canvas._miniW||canvas.width, h=canvas._miniH||canvas.height;
+    canvas._miniW=w; canvas._miniH=h;
+    var dpr=window.devicePixelRatio||1;
+    canvas.style.width=w+'px'; canvas.style.height=h+'px';
+    canvas.width=Math.round(w*dpr); canvas.height=Math.round(h*dpr);
     var ctx=canvas.getContext('2d');
-    var w=canvas.width,h=canvas.height;
+    ctx.setTransform(dpr,0,0,dpr,0,0);   /* width 대입이 변환을 지우므로 재설정 */
     ctx.clearRect(0,0,w,h);
     draw(ctx,type,w/2,h/2,Math.min(w,h)*.78,0,{color:App.SN.TOKENS.ink});
   }

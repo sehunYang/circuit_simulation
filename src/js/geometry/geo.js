@@ -47,6 +47,16 @@ App.Geo=(function(){
       gridY:Math.max(0,Math.min(GRID_ROWS-1,Math.round(gy))),
     };
   }
+  /* ── 뷰포트(캔버스) 논리 크기 ──────────────────────────────────────
+   * 캔버스 백업 저장소는 devicePixelRatio 배로 만들고 컨텍스트를 같은
+   * 배율로 스케일한다(main.js _resizeCanvases). 그래야 125%·150% 배율
+   * 화면에서 가는 선·작은 삼각형이 브라우저 확대로 뭉개지지 않는다.
+   * 그리기 좌표는 계속 CSS 픽셀이므로, 렌더러는 cv.width(=장치 픽셀)
+   * 대신 반드시 이 논리 크기를 화면 경계로 써야 한다. */
+  var _view={w:0,h:0,dpr:1};
+  function setViewSize(w,h,dpr){ _view.w=w; _view.h=h; _view.dpr=dpr; }
+  function viewSize(){ return _view; }
+
   /* 뷰포트 오프셋을 화면 밖으로 너무 벗어나지 않게 제한 */
   function clampOffset(){
     var vt=App.State.viewTransform;
@@ -211,7 +221,7 @@ App.Geo=(function(){
     return 1;
   }
 
-  return{gridToPixel,pixelToGrid,clampGrid,clampOffset,
+  return{gridToPixel,pixelToGrid,clampGrid,clampOffset,setViewSize,viewSize,
          getPortPixel,getCompPorts,getPortGridPos,rotatePortId,
          distToSegment,calcWirePath,getWireBendPoint,getBestDirection,
          wireConvDir};

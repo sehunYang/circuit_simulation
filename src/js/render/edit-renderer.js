@@ -72,7 +72,7 @@ App.EditRenderer=(function(){
   // ─── 메인 렌더 함수 ───
   function render(){
     if(!_cv||!_ctx) return;
-    var W=_cv.width,H=_cv.height;
+    var vs=App.Geo.viewSize(), W=vs.w, H=vs.h;   /* 논리(CSS) 크기 */
     _ctx.clearRect(0,0,W,H);
 
     var vt=App.State.viewTransform;
@@ -254,18 +254,32 @@ App.EditRenderer=(function(){
      *   3) side='right' 는 세로 도선 옆에 놓을 때 — 중앙 정렬하면 상자가
      *      도선을 가로지르므로 상자 왼쪽 끝을 기준점에 맞춘다.
      * ══════════════════════════════════════════════════════════════ */
-    var _placed=[];   /* 이번 렌더에서 이미 놓인 배지 사각형 */
-    function _free(r){
-      return !_placed.some(function(q){
+    /* 배지 자리 잡기용 점유 목록 — 우선순위가 다르므로 둘로 나눈다.
+     *   _placed : 이미 놓인 배지. 겹치면 둘 다 못 읽으므로 **절대 금지**.
+     *   _soft   : 소자 칸(+특성값 자리)과 도선. 흰 속 배지가 그림을 덮으므로
+     *             **되도록 피하되**, 피할 자리가 없으면 덮는 편이 낫다. */
+    var _placed=[], _soft=[];
+    function _clear(r,list){
+      return !list.some(function(q){
         return !(r.x1<q.x0||r.x0>q.x1||r.y1<q.y0||r.y0>q.y1);
       });
     }
-    /* 소자 칸(+ 아래 특성값 라벨 자리)을 미리 점유로 등록 —
-     * 배지가 심볼이나 특성값을 덮어버리지 않게 한다. */
     App.State.components.forEach(function(comp){
       var g=App.Geo.gridToPixel(comp.gridX,comp.gridY);
-      _placed.push({x0:g.x, x1:g.x+cellPx,
-                    y0:g.y, y1:g.y+cellPx+(App.State.showLabels?cellPx*0.3:0)});
+      _soft.push({x0:g.x, x1:g.x+cellPx,
+                  y0:g.y, y1:g.y+cellPx+(App.State.showLabels?cellPx*0.3:0)});
+    });
+    App.State.wires.forEach(function(wire){
+      var ep=_wireEndpoints(wire);
+      if(!ep) return;
+      var path=App.Geo.calcWirePath(ep.p1.x,ep.p1.y,ep.p2.x,ep.p2.y,wire.direction);
+      var m=3;   /* 도선 주변 여유 — 배지 테두리가 도선에 붙지 않게 */
+      for(var k=0;k<path.length-1;k++){
+        _soft.push({x0:Math.min(path[k].x,path[k+1].x)-m,
+                    x1:Math.max(path[k].x,path[k+1].x)+m,
+                    y0:Math.min(path[k].y,path[k+1].y)-m,
+                    y1:Math.max(path[k].y,path[k+1].y)+m});
+      }
     });
 
     function drawBadge(txt, bx, by, fsz, side){
@@ -285,19 +299,27 @@ App.EditRenderer=(function(){
       if(by-bh/2 <  2) by=bh/2+2;
       if(by+bh/2 > H-2) by=H-bh/2-2;
 
-      /* 이미 놓인 배지와 겹치면 위아래로 한 칸씩 비켜 자리를 찾는다.
-       * 색으로 구분할 수 없는 지면 규격에서는 배지끼리 겹치는 순간
-       * 둘 다 못 읽게 되므로, 겹침 회피가 가독성의 마지막 보루다. */
-      var rect={x0:bx-tw/2,x1:bx+tw/2,y0:by-bh/2,y1:by+bh/2};
-      if(!_free(rect)){
-        var by0=by, step=bh+3, tries=[1,-1,2,-2,3,-3];
-        for(var a=0;a<tries.length;a++){
-          var cy=by0+tries[a]*step;
-          if(cy-bh/2<2||cy+bh/2>H-2) continue;
-          var cand={x0:bx-tw/2,x1:bx+tw/2,y0:cy-bh/2,y1:cy+bh/2};
-          if(_free(cand)){ by=cy; rect=cand; break; }
-        }
+      /* 위아래로 한 칸씩 비켜 가며 자리를 찾는다.
+       *   1순위: 다른 배지·그림 어디에도 안 걸리는 자리
+       *   2순위: 최소한 다른 배지와는 안 겹치는 자리 (그림은 덮더라도)
+       * 색으로 구분할 수 없는 지면 규격에서는 배지끼리 겹치는 순간 둘 다
+       * 못 읽게 되므로, 배지 충돌만은 끝까지 피한다.
+       * 위쪽을 먼저 보는 이유는 소자 위가 배지의 관례적 자리이고 아래로
+       * 밀면 특성값 라벨·심볼과 부딪히기 쉬워서다. 탐색은 ±2칸으로 제한 —
+       * 더 멀리 밀면 자리는 찾겠지만 어느 소자·도선의 값인지 알 수 없게
+       * 되어 오히려 해롭다. */
+      var by0=by, step=bh+3, offs=[0,-1,1,-2,2];
+      var best=null, ok=null;
+      for(var a=0;a<offs.length;a++){
+        var cy=by0+offs[a]*step;
+        if(cy-bh/2<2||cy+bh/2>H-2) continue;
+        var cand={x0:bx-tw/2,x1:bx+tw/2,y0:cy-bh/2,y1:cy+bh/2};
+        if(!_clear(cand,_placed)) continue;
+        if(ok===null) ok=cand;
+        if(_clear(cand,_soft)){ best=cand; break; }
       }
+      var rect=best||ok||{x0:bx-tw/2,x1:bx+tw/2,y0:by0-bh/2,y1:by0+bh/2};
+      by=(rect.y0+rect.y1)/2;
       _placed.push(rect);
 
       ctx.beginPath();

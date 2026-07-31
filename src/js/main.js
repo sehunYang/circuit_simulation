@@ -22,11 +22,26 @@ App.Main=(function(){
   }
   var _TOUCH_EVENTS=['pointerdown','touchstart','touchmove','touchend','click'];
 
+  /* 캔버스 3겹을 컨테이너 크기에 맞춘다.
+   * 백업 저장소는 devicePixelRatio 배로 잡고 CSS 크기는 논리 크기로 고정한 뒤
+   * 컨텍스트를 같은 배율로 스케일한다. 이렇게 하지 않으면 125%·150% 배율
+   * 화면에서 브라우저가 캔버스를 통째로 확대해 도선·화살표가 뭉개진다.
+   * (그리기 좌표계는 계속 CSS 픽셀 — 렌더러 코드는 배율을 몰라도 된다) */
   function _resizeCanvases(){
     var c=document.getElementById('canvas-container');var W=c.clientWidth,H=c.clientHeight;
+    var dpr=window.devicePixelRatio||1;
+    var bw=Math.round(W*dpr), bh=Math.round(H*dpr);
     ['canvas-bg','canvas-main','canvas-anim'].forEach(function(id){
-      var cv=document.getElementById(id);if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;}
+      var cv=document.getElementById(id);
+      cv.style.width=W+'px'; cv.style.height=H+'px';
+      /* width 대입은 컨텍스트 상태(변환 포함)를 초기화하므로 크기가
+       * 바뀔 때만 대입하고, 그 직후 반드시 변환을 다시 건다. */
+      if(cv.width!==bw||cv.height!==bh){
+        cv.width=bw; cv.height=bh;
+        cv.getContext('2d').setTransform(dpr,0,0,dpr,0,0);
+      }
     });
+    App.Geo.setViewSize(W,H,dpr);
   }
 
   function _buildSidebar(){

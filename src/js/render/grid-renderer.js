@@ -11,7 +11,7 @@ App.GridRenderer=(function(){
   function init(){_cv=document.getElementById('canvas-bg');_ctx=_cv.getContext('2d');}
   function render(){
     if(!_cv||!_ctx) return;
-    var W=_cv.width,H=_cv.height;
+    var vs=App.Geo.viewSize(), W=vs.w, H=vs.h;   /* 논리(CSS) 크기 */
     _ctx.clearRect(0,0,W,H);
     var vt=App.State.viewTransform, cp=CELL_SIZE*vt.scale;
     /* 화면에 보이는 칸 범위만 순회 (성능) */
