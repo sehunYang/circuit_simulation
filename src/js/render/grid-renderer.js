@@ -17,8 +17,10 @@ App.GridRenderer=(function(){
     /* 화면에 보이는 칸 범위만 순회 (성능) */
     var sC=Math.max(0,Math.floor(-vt.offsetX/cp)), eC=Math.min(GRID_COLS,Math.ceil((W-vt.offsetX)/cp)+1);
     var sR=Math.max(0,Math.floor(-vt.offsetY/cp)), eR=Math.min(GRID_ROWS,Math.ceil((H-vt.offsetY)/cp)+1);
-    var alpha=Math.min(0.55,0.12+vt.scale*.18);
-    _ctx.fillStyle='rgba(90,120,180,'+alpha+')';
+    /* 지면(흰 바탕) 위 배치 보조선 — 아주 옅은 회색 점.
+     * 수능 문항 그림에는 격자가 없으므로 편집을 돕는 최소한으로만 남긴다. */
+    var alpha=Math.min(0.30,0.07+vt.scale*.10);
+    _ctx.fillStyle='rgba(0,0,0,'+alpha+')';
     for(var c=sC;c<eC;c++){
       for(var r=sR;r<eR;r++) _ctx.fillRect(c*cp+vt.offsetX-1,r*cp+vt.offsetY-1,2,2);
     }

@@ -8,8 +8,21 @@ var App=window.App;
  *   렌더 순서(레이어): 도선 → 부품/라벨 → 선택박스 → 포트점
  *                      → 도선 미리보기 → 드래그 고스트 → 솔버 오버레이
  *   scheduleRender(): rAF 디바운스. 선택/연결 시 애니메이션 루프 가동.
+ *
+ *   ── 색 규약 (수능 지면 규격) ────────────────────────────────────
+ *   회로 그림 자체(도선·소자·라벨·전류 화살표/배지)는 **완전 흑백**이다.
+ *   파란 계열은 오직 *편집 보조 표시*(선택 박스, 포트 점, 미리보기,
+ *   드래그 고스트)에만 쓴다 — 이들은 그림이 아니라 UI 이므로 촬영(SVG)
+ *   결과물에는 포함되지 않는다.
  * ════════════════════════════════════════════════════════════════════ */
 App.EditRenderer=(function(){
+  var SN=null;                                   /* App.SN (init 시점에 확정) */
+  var UI={                                        /* 편집 보조 표시 색 */
+    accent:'#2563eb',   /* 선택·미리보기 */
+    ok:    '#128a53',   /* 연결 가능 / 빈 포트 */
+    warn:  '#c0392b',   /* 연결 불가 / 점유 */
+    node:  '#3d4453',   /* 연결된 포트 */
+  };
   var _cv,_ctx;
   var _pending=false;
   var _wirePreview=null;       // {x1,y1,x2,y2,dir} — 도선 미리보기
@@ -17,7 +30,7 @@ App.EditRenderer=(function(){
   var _flashWires={};          // {wireId: endTime} — 도선 완성 플래시
   var _selAnimId=null;
 
-  function init(){_cv=document.getElementById('canvas-main');_ctx=_cv.getContext('2d');}
+  function init(){_cv=document.getElementById('canvas-main');_ctx=_cv.getContext('2d');SN=App.SN;}
 
   function scheduleRender(){
     if(_pending) return;
@@ -84,25 +97,23 @@ App.EditRenderer=(function(){
       if(isFlashing&&now>flashEnd-50){delete _flashWires[wire.id];}
 
       _ctx.save();
+      _ctx.lineCap='round'; _ctx.lineJoin='round';
       _ctx.beginPath();
       _ctx.moveTo(path[0].x,path[0].y);
       for(var i=1;i<path.length;i++) _ctx.lineTo(path[i].x,path[i].y);
 
       if(isFlashing){
-        // 완성 플래시: 밝게 + 글로우
+        // 완성 플래시: 굵기로만 알린다 (색은 지면 잉크 유지)
         var flashRatio=(flashEnd-now)/WIRE_FLASH_MS; // 1→0
-        _ctx.strokeStyle='rgba(120,230,255,'+Math.min(1,flashRatio*2)+')';
-        _ctx.lineWidth=3.5;
-        _ctx.shadowColor='#70e0ff';
-        _ctx.shadowBlur=12*flashRatio;
+        _ctx.strokeStyle=UI.accent;
+        _ctx.lineWidth=SN.TOKENS.lwWire+2.2*flashRatio;
       } else if(isSelected){
-        _ctx.strokeStyle='#3a9de0';
-        _ctx.lineWidth=2.8;
-        _ctx.shadowColor='rgba(58,157,224,0.4)';
-        _ctx.shadowBlur=6;
+        _ctx.strokeStyle=UI.accent;
+        _ctx.lineWidth=SN.TOKENS.lwWire+1.1;
       } else {
-        _ctx.strokeStyle='#4a6a90';
-        _ctx.lineWidth=1.8;
+        /* 기본 도선 = 가는 검정 실선 (수능 지면 규격) */
+        _ctx.strokeStyle=SN.TOKENS.ink;
+        _ctx.lineWidth=SN.TOKENS.lwWire;
       }
       _ctx.stroke();
       _ctx.restore();
@@ -128,7 +139,7 @@ App.EditRenderer=(function(){
       /* ── 3. 선택 바운딩 박스 (애니메이션 점선) ── */
       if(comp.id===selId&&!isDragged){
         _ctx.save();
-        _ctx.strokeStyle='#2ecc71';_ctx.lineWidth=1.5;
+        _ctx.strokeStyle=UI.accent;_ctx.lineWidth=1.5;
         _ctx.setLineDash([4,4]);
         _ctx.lineDashOffset=-((Date.now()/150)%8);
         _ctx.strokeRect(gp.x+2,gp.y+2,cellPx-4,cellPx-4);
@@ -145,9 +156,8 @@ App.EditRenderer=(function(){
       var previewDir=_wirePreview.dir||'H-first';
       var pvPath=App.Geo.calcWirePath(_wirePreview.x1,_wirePreview.y1,_wirePreview.x2,_wirePreview.y2,previewDir);
       _ctx.save();
-      _ctx.strokeStyle='#3a9de0';_ctx.lineWidth=1.8;
+      _ctx.strokeStyle=UI.accent;_ctx.lineWidth=1.8;
       _ctx.setLineDash([6,4]);_ctx.globalAlpha=0.72;
-      _ctx.shadowColor='#3a9de0';_ctx.shadowBlur=4;
       _ctx.beginPath();
       _ctx.moveTo(pvPath[0].x,pvPath[0].y);
       for(var k=1;k<pvPath.length;k++) _ctx.lineTo(pvPath[k].x,pvPath[k].y);
@@ -161,8 +171,8 @@ App.EditRenderer=(function(){
       var scx=sgp.x+cellPx/2, scy=sgp.y+cellPx/2;
       var occ=App.State.isOccupied(dragInfo.snapGX,dragInfo.snapGY,dragInfo.compId);
       _ctx.save();_ctx.globalAlpha=0.52;
-      App.Symbols.draw(_ctx,dragInfo.type,scx,scy,cellPx,dragInfo.rotation,{color:occ?'#e05050':'#3adfaa'});
-      _ctx.strokeStyle=occ?'#e05050':'#3adfaa';_ctx.lineWidth=1.5;
+      App.Symbols.draw(_ctx,dragInfo.type,scx,scy,cellPx,dragInfo.rotation,{color:occ?UI.warn:UI.ok});
+      _ctx.strokeStyle=occ?UI.warn:UI.ok;_ctx.lineWidth=1.5;
       _ctx.setLineDash([3,3]);_ctx.strokeRect(sgp.x+2,sgp.y+2,cellPx-4,cellPx-4);
       _ctx.setLineDash([]);_ctx.restore();
     }
@@ -209,14 +219,16 @@ App.EditRenderer=(function(){
         var mx=(sx+ex)/2, my=(sy+ey)/2;
         var ang=Math.atan2(ey-sy,ex-sx);
         if(convDir<0) ang+=Math.PI;
+        /* 수능 규격 화살표: 속 찬 검정 삼각 화살촉.
+         * 도선(검정 실선) 위에 겹치므로 흰 테두리로 살짝 띄운다. */
         ctx.save();
-        ctx.shadowColor='rgba(0,0,0,0.85)'; ctx.shadowBlur=5;
-        ctx.shadowOffsetX=0; ctx.shadowOffsetY=0;
         ctx.translate(mx,my); ctx.rotate(ang);
         ctx.beginPath();
         ctx.moveTo(as,0); ctx.lineTo(-as*0.6,-as*0.52); ctx.lineTo(-as*0.6,as*0.52);
         ctx.closePath();
-        ctx.fillStyle='#ffa030';
+        ctx.strokeStyle=SN.TOKENS.paper; ctx.lineWidth=2.4; ctx.lineJoin='round';
+        ctx.stroke();
+        ctx.fillStyle=SN.TOKENS.ink;
         ctx.fill();
         ctx.restore();
       }
@@ -225,47 +237,29 @@ App.EditRenderer=(function(){
     /* ══════════════════════════════════════════════════════════════
      * 패스 2 — 텍스트 배지 전부 (최상위 레이어)
      *
+     * 수능 지면 규격: 배경 상자 없이 검정 글자만 둔다. 도선 위에 겹칠 때를
+     * 대비해 흰 헤일로(외곽선)를 깔아 가독성을 확보한다.
+     *
      * drawBadge 설계 원칙:
      *   1) ctx 상태를 save/restore 로 완전 격리
-     *   2) 배경 박스는 shadow 없이 그린다 (shadow가 박스 내부로 침투해
-     *      텍스트를 가리는 문제 방지)
-     *   3) ctx.beginPath() 로 이전 경로 초기화
-     *   4) 텍스트만 shadow 적용 (글로우 효과)
+     *   2) 글자 폭을 재서 화면 밖으로 잘리지 않게 위치 보정
      * ══════════════════════════════════════════════════════════════ */
-    function drawBadge(txt, bx, by, fsz, strokeCol){
+    function drawBadge(txt, bx, by, fsz){
       ctx.save();
-      /* 상태 완전 초기화 */
-      ctx.shadowBlur=0; ctx.shadowColor='transparent';
       ctx.globalAlpha=1; ctx.setLineDash([]);
 
-      ctx.font='bold '+fsz+'px "Courier New",monospace';
-      ctx.textAlign='center'; ctx.textBaseline='middle';
-      var tw=ctx.measureText(txt).width+14;
-      var bh=fsz+8;
+      ctx.font='italic '+fsz+'px '+SN.TOKENS.font;
+      var tw=ctx.measureText(txt).width+6;
+      var bh=fsz+4;
 
       /* 경계 클리핑 방지 */
       if(bx-tw/2 <  2) bx=tw/2+2;
       if(bx+tw/2 > W-2) bx=W-tw/2-2;
       if(by-bh/2 <  2) by=bh/2+2;
       if(by+bh/2 > H-2) by=H-bh/2-2;
-
-      /* 배경 박스: shadow 없이 */
-      ctx.beginPath();
-      if(ctx.roundRect) ctx.roundRect(bx-tw/2,by-bh/2,tw,bh,3);
-      else ctx.rect(bx-tw/2,by-bh/2,tw,bh);
-      ctx.fillStyle='rgba(3,8,24,0.96)';
-      ctx.fill();
-      ctx.strokeStyle=strokeCol||'rgba(70,160,255,0.9)';
-      ctx.lineWidth=1.3;
-      ctx.stroke();
-
-      /* 텍스트: shadow 적용 (글로우) */
-      ctx.shadowColor='rgba(80,180,255,0.8)';
-      ctx.shadowBlur=3;
-      ctx.fillStyle='#ffffff';
-      ctx.fillText(txt,bx,by);
-
       ctx.restore();
+
+      App.SN.label(ctx,txt,bx,by,fsz,{italic:true,halo:3.5});
     }
 
     /* ── 도선 배지 ── */
@@ -291,9 +285,9 @@ App.EditRenderer=(function(){
         } else {
           bx2=mx-offset;
         }
-        var fsz2=Math.max(9,Math.min(11,cellPx*0.20));
+        var fsz2=Math.max(SN.FS.badgeMin,Math.min(11,cellPx*0.20));
         var Idisp=Ipeak*rmsK;
-        drawBadge(_fmtCurrentShort(Math.abs(Idisp))+(isAC?' rms':''),bx2,by2,fsz2,'rgba(70,180,255,0.8)');
+        drawBadge(_fmtCurrentShort(Math.abs(Idisp))+(isAC?' rms':''),bx2,by2,fsz2);
       }
     });
 
@@ -305,11 +299,11 @@ App.EditRenderer=(function(){
       if(Ipeak==null||Math.abs(Ipeak)<1e-15) return;
       var gp=App.Geo.gridToPixel(comp.gridX,comp.gridY);
       if(gp.x+cellPx<-5||gp.x>W+5||gp.y+cellPx<-5||gp.y>H+5) return;
-      var fsz=Math.max(10,Math.min(13,cellPx*0.22));
+      var fsz=Math.max(10,Math.min(SN.FS.badgeMax,cellPx*0.22));
       var by=gp.y-cellPx*0.15;
       if(by-(fsz+8)/2<2) by=gp.y+cellPx*0.15+(fsz+8);
       var Idisp=Math.abs(Ipeak)*rmsK;
-      drawBadge(_fmtCurrentShort(Idisp)+(isAC?' rms':''),gp.x+cellPx/2,by,fsz,'rgba(50,170,255,0.9)');
+      drawBadge(_fmtCurrentShort(Idisp)+(isAC?' rms':''),gp.x+cellPx/2,by,fsz);
     });
 
     ctx.restore(); /* 외부 restore */
@@ -319,21 +313,19 @@ App.EditRenderer=(function(){
   function _renderSolverError(ctx,W,H,errMsg){
     ctx.save();
     var text='⚠ '+errMsg;
-    var fs=12;
-    ctx.font='bold '+fs+'px "Courier New",monospace';
-    var tw=ctx.measureText(text).width+20;
+    var fs=SN.FS.notice;
+    ctx.font=fs+'px '+SN.TOKENS.fontKo;
+    var tw=ctx.measureText(text).width+22;
     var bx=W/2, by=40;
-    ctx.fillStyle='rgba(100,20,20,0.80)';
-    ctx.strokeStyle='rgba(180,50,50,0.6)';
+    ctx.fillStyle='rgba(255,255,255,0.94)';
+    ctx.strokeStyle='#e0b4b4';
     ctx.lineWidth=1;
     ctx.beginPath();
-    if(ctx.roundRect) ctx.roundRect(bx-tw/2,by-16,tw,22,5);
-    else ctx.rect(bx-tw/2,by-16,tw,22);
+    if(ctx.roundRect) ctx.roundRect(bx-tw/2,by-17,tw,24,5);
+    else ctx.rect(bx-tw/2,by-17,tw,24);
     ctx.fill();ctx.stroke();
-    ctx.fillStyle='#f09090';
-    ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(text,bx,by-5);
     ctx.restore();
+    App.SN.label(ctx,text,bx,by-5,fs,{ko:true,color:'#b42318'});
   }
 
   /* 부품 배지용 짧은 전류 포맷 */
@@ -382,88 +374,78 @@ App.EditRenderer=(function(){
     });
   }
 
-  // 출발 포트: 크고 밝은 초록 글로우
+  /* 포트 점은 편집 보조 표시다 — 지면(흑백) 규격이 아니라 UI 색을 쓴다.
+   * 흰 바탕에서 읽히도록 채움은 흰색, 구분은 테두리 색으로 준다. */
+
+  // 출발 포트: 강조 링 + 맥동
   function _drawPort_active(ctx,x,y,now){
     ctx.save();
     var pulse=0.7+0.3*Math.sin(now/200); // 맥동 효과
     var r=PORT_DOT_R+2*pulse;
     ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);
-    ctx.fillStyle='#3af0a0';
-    ctx.shadowColor='#3af0a0';ctx.shadowBlur=14*pulse;
+    ctx.fillStyle=UI.ok;
     ctx.fill();
-    ctx.strokeStyle='rgba(255,255,255,0.6)';ctx.lineWidth=1.2;ctx.stroke();
+    ctx.strokeStyle=SN.TOKENS.paper;ctx.lineWidth=1.6;ctx.stroke();
     ctx.restore();
   }
 
-  // nearest 포트: 연결 가능 여부에 따라 흰색/빨간색 하이라이트
+  // nearest 포트: 연결 가능 여부에 따라 파란/빨간 하이라이트
   function _drawPort_nearest(ctx,x,y,canConnect){
     ctx.save();
     var r=PORT_DOT_R+2;
     ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);
-    if(canConnect){
-      ctx.fillStyle='rgba(255,255,255,0.9)';
-      ctx.shadowColor='rgba(200,240,255,0.8)';ctx.shadowBlur=10;
-    } else {
-      ctx.fillStyle='rgba(240,80,80,0.85)';
-      ctx.shadowColor='rgba(240,80,80,0.6)';ctx.shadowBlur=8;
-    }
+    ctx.fillStyle=canConnect?UI.accent:UI.warn;
     ctx.fill();
-    ctx.strokeStyle='rgba(0,0,0,0.4)';ctx.lineWidth=1;ctx.stroke();
+    ctx.strokeStyle=SN.TOKENS.paper;ctx.lineWidth=1.6;ctx.stroke();
     ctx.restore();
   }
 
-  // 연결된 포트: 작은 파란 채워진 점 (항상 표시)
+  // 연결된 포트: 작은 검정 채워진 점 (수능 회로도의 접점 표기와 같은 인상)
   function _drawPort_connected(ctx,x,y){
     ctx.save();
     var r=PORT_DOT_R-1;
     ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);
-    ctx.fillStyle='#3a7fc0';
+    ctx.fillStyle=UI.node;
     ctx.fill();
-    ctx.strokeStyle='rgba(0,0,0,0.5)';ctx.lineWidth=1;ctx.stroke();
     ctx.restore();
   }
 
-  // 빈 포트: 초록 hollow ring
+  // 빈 포트: 흰 속 + 회색 링
   function _drawPort_free(ctx,x,y){
     ctx.save();
     ctx.beginPath();ctx.arc(x,y,PORT_DOT_R,0,Math.PI*2);
-    ctx.fillStyle='rgba(40,180,100,0.15)';ctx.fill();
-    ctx.strokeStyle='#2ecc71';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.fillStyle=SN.TOKENS.paper;ctx.fill();
+    ctx.strokeStyle=UI.ok;ctx.lineWidth=1.5;ctx.stroke();
     ctx.restore();
   }
 
-  // 선택된 도선의 핸들 (끝점 흰 원 + 꺾임점 노란 다이아)
+  // 선택된 도선의 핸들 (끝점 흰 원 + 꺾임점 다이아)
   function _drawWireHandles(ctx,path,wire){
     if(!path||path.length<3) return;
     ctx.save();
 
-    // 끝점 핸들 (흰 원)
+    // 끝점 핸들 (흰 원 + 강조 테두리)
     [path[0],path[2]].forEach(function(pt){
       ctx.beginPath();ctx.arc(pt.x,pt.y,4,0,Math.PI*2);
-      ctx.fillStyle='#ffffff';
-      ctx.shadowColor='rgba(255,255,255,0.5)';ctx.shadowBlur=6;
+      ctx.fillStyle=SN.TOKENS.paper;
       ctx.fill();
-      ctx.strokeStyle='#3a9de0';ctx.lineWidth=1.5;ctx.stroke();
+      ctx.strokeStyle=UI.accent;ctx.lineWidth=1.5;ctx.stroke();
     });
 
-    // 꺾임점 핸들 (노란 다이아몬드)
+    // 꺾임점 핸들 (다이아몬드)
     var bp=path[1];
-    var hs=5; // 핸들 크기
+    var hs=6; // 핸들 크기
     ctx.beginPath();
     ctx.moveTo(bp.x,bp.y-hs);ctx.lineTo(bp.x+hs,bp.y);
     ctx.lineTo(bp.x,bp.y+hs);ctx.lineTo(bp.x-hs,bp.y);
     ctx.closePath();
-    ctx.fillStyle='#f0c040';
-    ctx.shadowColor='rgba(240,192,64,0.6)';ctx.shadowBlur=6;
+    ctx.fillStyle=SN.TOKENS.paper;
     ctx.fill();
-    ctx.strokeStyle='rgba(0,0,0,0.4)';ctx.lineWidth=1;ctx.stroke();
-    // 꺾임 방향 표시 텍스트
-    ctx.shadowBlur=0;
-    ctx.fillStyle='rgba(200,160,30,0.7)';
-    ctx.font='8px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(wire.direction==='H-first'?'H':'V',bp.x,bp.y);
-
+    ctx.strokeStyle=UI.accent;ctx.lineWidth=1.4;ctx.stroke();
     ctx.restore();
+
+    // 꺾임 방향 표시 텍스트
+    App.SN.label(ctx,wire.direction==='H-first'?'H':'V',bp.x,bp.y,8,{color:UI.accent});
   }
 
   /* ── 선택 박스 애니메이션 루프 ── */

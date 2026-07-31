@@ -17,7 +17,10 @@ App.TransientGraph=(function(){
   var _compList=[];         // [{id,type,label,color}] 범례용
 
   /* 곡선 색상 팔레트 (소자 순서대로 순환 배정) */
-  var _colors=['#50c8ff','#ffa040','#60e080','#e060e0','#f0e060','#e08080'];
+  /* 곡선 색 — 흰 지면 위에서 읽히도록 어둡고 채도를 눌러 잡은 팔레트.
+   * (수능 지면은 흑백이지만 그래프는 여러 소자를 동시에 겹쳐 그리므로
+   *  구분을 위해 최소한의 색을 쓴다. 인쇄해도 명도가 서로 다르다.) */
+  var _colors=['#1d4ed8','#b45309','#15803d','#a21caf','#0e7490','#b91c1c'];
 
   /* 극점 정보: _computeTransient에서 계산, _drawGraph 수식 레이블에서 사용
    *   {alpha:1/τ, omegad:감쇠진동 각주파수, isOsc:진동 여부} */
@@ -605,7 +608,7 @@ App.TransientGraph=(function(){
       btn.className='tp-toggle active';
       btn.textContent=label;
       btn.style.borderColor=color; btn.style.color=color;
-      btn.style.background='rgba(0,0,0,0.3)';
+      btn.style.background='#ffffff';
       btn.dataset.compId=c.id;
       btn.addEventListener('click',function(){
         _active[c.id]=!_active[c.id];
@@ -688,11 +691,9 @@ App.TransientGraph=(function(){
     var gW=W-PAD.left-PAD.right;
     var gH=H-PAD.top-PAD.bottom;
 
-    /* ── 배경 ── */
-    _ctx.fillStyle='rgba(4,10,24,1)';
+    /* ── 배경 ── 수능 그래프 문항과 같이 흰 지면 위에 그린다 */
+    _ctx.fillStyle='#ffffff';
     _ctx.fillRect(0,0,W,H);
-    _ctx.fillStyle='rgba(14,26,56,0.8)';
-    _ctx.fillRect(PAD.left,PAD.top,gW,gH);
 
     /* ── 활성 소자 데이터 수집 ── */
     var STEPS_N=1000;
@@ -762,7 +763,7 @@ App.TransientGraph=(function(){
       var py=Math.round(toPixY(yv))+0.5;
       if(py<PAD.top-1||py>PAD.top+gH+1) continue;
       var isZero=Math.abs(yv)<yStep*0.01;
-      _ctx.strokeStyle=isZero?'rgba(80,140,220,0.6)':'rgba(40,70,130,0.5)';
+      _ctx.strokeStyle=isZero?'rgba(0,0,0,0.55)':'rgba(0,0,0,0.13)';
       _ctx.lineWidth=isZero?1.2:0.7;
       _ctx.beginPath(); _ctx.moveTo(PAD.left,py); _ctx.lineTo(PAD.left+gW,py); _ctx.stroke();
     }
@@ -770,7 +771,7 @@ App.TransientGraph=(function(){
       var px=Math.round(toPixX(xv))+0.5;
       if(px<PAD.left-1||px>PAD.left+gW+1) continue;
       var isOrg=xv<xStep*0.01;
-      _ctx.strokeStyle=isOrg?'rgba(80,140,220,0.6)':'rgba(40,70,130,0.5)';
+      _ctx.strokeStyle=isOrg?'rgba(0,0,0,0.55)':'rgba(0,0,0,0.13)';
       _ctx.lineWidth=isOrg?1.2:0.7;
       _ctx.beginPath(); _ctx.moveTo(px,PAD.top); _ctx.lineTo(px,PAD.top+gH); _ctx.stroke();
     }
@@ -778,30 +779,30 @@ App.TransientGraph=(function(){
 
     /* ── 축 테두리 ── */
     _ctx.save();
-    _ctx.strokeStyle='rgba(60,120,200,0.8)'; _ctx.lineWidth=1.2;
+    _ctx.strokeStyle='rgba(0,0,0,0.8)'; _ctx.lineWidth=1.2;
     _ctx.strokeRect(PAD.left+0.5,PAD.top+0.5,gW,gH);
     _ctx.restore();
 
     /* ── Y 눈금 레이블 ── */
     _ctx.save();
-    _ctx.font='bold 10px "Courier New",monospace';
+    _ctx.font='10px '+App.SN.TOKENS.font;
     _ctx.textAlign='right'; _ctx.textBaseline='middle';
     for(var yv2=yMin; yv2<=yMax+yStep*0.001; yv2+=yStep){
       var py2=Math.round(toPixY(yv2))+0.5;
       if(py2<PAD.top-1||py2>PAD.top+gH+1) continue;
-      _ctx.fillStyle=Math.abs(yv2)<yStep*0.01?'#a0d0ff':'#c8e0ff';
+      _ctx.fillStyle=Math.abs(yv2)<yStep*0.01?'#000000':'#3d4453';
       _ctx.fillText(_fmtVal(yv2,false), PAD.left-5, py2);
     }
     _ctx.restore();
 
     /* ── X 눈금 레이블 ── */
     _ctx.save();
-    _ctx.font='bold 10px "Courier New",monospace';
+    _ctx.font='10px '+App.SN.TOKENS.font;
     _ctx.textAlign='center'; _ctx.textBaseline='top';
     for(var xv2=0; xv2<=xMax+xStep*0.001; xv2+=xStep){
       var px2=Math.round(toPixX(xv2))+0.5;
       if(px2<PAD.left-1||px2>PAD.left+gW+1) continue;
-      _ctx.fillStyle=xv2<xStep*0.01?'#a0d0ff':'#c8e0ff';
+      _ctx.fillStyle=xv2<xStep*0.01?'#000000':'#3d4453';
       _ctx.fillText(_fmtVal(xv2,true), px2, PAD.top+gH+5);
     }
     _ctx.restore();
@@ -863,9 +864,8 @@ App.TransientGraph=(function(){
 
       /* 커브 라인 — arr[0]이 t=0의 정확한 초기값 */
       _ctx.save();
-      _ctx.shadowColor=c.color; _ctx.shadowBlur=4;
       _ctx.beginPath();
-      _ctx.strokeStyle=c.color; _ctx.lineWidth=2.4; _ctx.lineJoin='round';
+      _ctx.strokeStyle=c.color; _ctx.lineWidth=2.2; _ctx.lineJoin='round';
       var started2=false;
       var lastPxk=PAD.left, lastPyk=PAD.top+gH;
       for(var k2=0;k2<N;k2++){
@@ -880,10 +880,9 @@ App.TransientGraph=(function(){
 
       /* 종점 강조 */
       if(started){
-        _ctx.beginPath(); _ctx.arc(lastPxk,lastPyk,4,0,Math.PI*2);
+        _ctx.beginPath(); _ctx.arc(lastPxk,lastPyk,3.5,0,Math.PI*2);
+        _ctx.strokeStyle='#ffffff'; _ctx.lineWidth=2; _ctx.stroke();
         _ctx.fillStyle=c.color; _ctx.fill();
-        _ctx.strokeStyle='#ffffff'; _ctx.lineWidth=1; _ctx.shadowBlur=0;
-        _ctx.stroke();
       }
       _ctx.restore();
 
@@ -969,8 +968,8 @@ App.TransientGraph=(function(){
 
     /* ── 축 레이블 ── */
     _ctx.save();
-    _ctx.font='bold 11px "Courier New",monospace';
-    _ctx.fillStyle='#7ab0d8';
+    _ctx.font='italic 11px '+App.SN.TOKENS.font;
+    _ctx.fillStyle='#000000';
     _ctx.textAlign='left'; _ctx.textBaseline='top';
     _ctx.fillText('i(t)', PAD.left+4, PAD.top+3);
     _ctx.textAlign='right'; _ctx.textBaseline='bottom';
@@ -1001,7 +1000,7 @@ App.TransientGraph=(function(){
           'pointer-events:none',
           'z-index:30',
           'white-space:nowrap',
-          'background:rgba(4,10,24,0.82)',
+          'background:rgba(255,255,255,0.86)',
           'border-radius:3px',
           'padding:1px 4px',
           'color:'+lb.color,
@@ -1028,12 +1027,12 @@ App.TransientGraph=(function(){
       /* KaTeX 미로드 시 캔버스 폴백 */
       _pendingLabels.forEach(function(lb){
         _ctx.save();
-        _ctx.font='bold 9px "Courier New",monospace';
+        _ctx.font='italic 9px '+App.SN.TOKENS.font;
         _ctx.textAlign='left'; _ctx.textBaseline='middle';
         var tw=_ctx.measureText(lb.formula).width;
         var lx=lb.preferLx;
         if(lx+tw+6>lb.PAD_left+lb.gW) lx=lb.PAD_left+lb.gW-tw-6;
-        _ctx.fillStyle='rgba(4,10,24,0.75)';
+        _ctx.fillStyle='rgba(255,255,255,0.85)';
         _ctx.fillRect(lx-2,lb.ly-7,tw+6,14);
         _ctx.fillStyle=lb.color;
         _ctx.fillText(lb.formula,lx,lb.ly);

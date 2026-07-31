@@ -14,7 +14,7 @@
     width: 220px; z-index: 200;
     transform: translateX(-100%);
     transition: transform 0.25s cubic-bezier(0.32,0.72,0,1);
-    box-shadow: 4px 0 24px rgba(0,0,0,0.7);
+    box-shadow: 4px 0 24px rgba(0,0,0,0.18);
     flex-direction: column; align-items: center;
     padding: 56px 0 12px 0;
   }
@@ -25,7 +25,7 @@
   /* 사이드바 배경 딤 */
   #sidebar-overlay {
     display: none; position: fixed; inset: 0; z-index: 199;
-    background: rgba(0,0,0,0.55);
+    background: rgba(0,0,0,0.32);
   }
   #sidebar-overlay.visible { display: block; }
 
@@ -33,9 +33,9 @@
   #hamburger-btn {
     display: flex; position: fixed; top: 10px; left: 10px; z-index: 201;
     width: 40px; height: 40px; border-radius: var(--radius-lg);
-    background: rgba(17,24,39,0.95); border: 1px solid var(--border-base);
+    background: var(--bg-glass); border: 1px solid var(--border-base);
     flex-direction: column; align-items: center; justify-content: center;
-    gap: 5px; cursor: pointer;
+    gap: 5px; cursor: pointer; backdrop-filter: blur(8px); box-shadow: var(--shadow-panel);
   }
   #hamburger-btn span { display: block; width: 20px; height: 2px; background: var(--text-accent); border-radius: 1px; transition: all 0.2s; }
 
@@ -57,7 +57,7 @@
   #prop-panel.visible { transform: translateY(0); }
   #prop-panel::before {
     content: ''; display: block; width: 40px; height: 4px;
-    background: #2a4a70; border-radius: 2px; margin: -6px auto 12px;
+    background: var(--border-base); border-radius: 2px; margin: -6px auto 12px;
   }
   .pp-title { font-size: 13px; }
   .pp-key, .pp-val, #prop-content { font-size: 13px; }
@@ -67,22 +67,22 @@
   #mobile-info-btn {
     position: fixed; top: 58px; left: 10px; z-index: 201;
     width: 40px; height: 40px; border-radius: var(--radius-lg);
-    background: rgba(30,70,160,0.9); border: 1.5px solid var(--border-focus);
+    background: var(--sel-bg); border: 1.5px solid var(--border-active);
     align-items: center; justify-content: center;
-    color: var(--text-accent2); font-size: 18px; font-weight: 700;
-    cursor: pointer; box-shadow: 0 2px 12px rgba(60,130,255,0.4); pointer-events: auto;
+    color: var(--text-accent); font-size: 18px; font-weight: 700;
+    cursor: pointer; box-shadow: var(--shadow-panel); pointer-events: auto;
   }
   #mobile-graph-btn {
     position: fixed; top: 106px; left: 10px; z-index: 201;
     width: 40px; height: 40px; border-radius: var(--radius-lg);
-    background: rgba(20,50,30,0.9); border: 1.5px solid #3a9a5a;
+    background: var(--bg-glass); border: 1.5px solid var(--border-base);
     align-items: center; justify-content: center;
     font-size: 18px; cursor: pointer;
-    box-shadow: 0 2px 12px rgba(40,180,80,0.35); pointer-events: auto;
+    box-shadow: var(--shadow-panel); pointer-events: auto;
   }
   #mobile-graph-btn.graph-active {
-    background: rgba(30,90,50,0.95); border-color: #50e080;
-    box-shadow: 0 0 14px rgba(60,220,100,0.5);
+    background: var(--sel-bg); border-color: var(--border-active);
+    box-shadow: 0 0 0 2px rgba(37,99,235,0.18);
   }
 
   /* 그래프 패널: 하단 시트 */

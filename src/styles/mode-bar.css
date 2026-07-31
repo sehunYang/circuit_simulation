@@ -4,15 +4,15 @@
 #mode-bar {
   position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
   z-index: 20; display: flex; gap: 4px;
-  background: rgba(17,24,39,0.93); border: 1px solid var(--border-base); border-radius: var(--radius-pill);
+  background: var(--bg-glass); border: 1px solid var(--border-base); border-radius: var(--radius-pill);
   padding: 5px 8px; backdrop-filter: var(--blur);
-  box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.14);
 }
 .mode-btn {
   padding: 7px 18px; border: 1px solid transparent; border-radius: 28px;
   font-size: 12px; font-weight: 700; cursor: pointer;
   background: transparent; color: var(--text-dim);
-  transition: all 0.18s; font-family: var(--font-mono); letter-spacing: 0.5px;
+  transition: all 0.18s; font-family: var(--font); letter-spacing: 0.5px;
 }
-.mode-btn:hover:not(.active) { color: #a0b8cc; background: rgba(255,255,255,0.05); }
-.mode-btn.active { background: #1a3a6a; border-color: var(--border-active); color: var(--text-accent); box-shadow: 0 0 10px rgba(60,130,220,0.3); }
+.mode-btn:hover:not(.active) { color: var(--text-accent2); background: var(--btn-h); }
+.mode-btn.active { background: var(--sel-bg); border-color: var(--border-active); color: var(--text-accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.18); }

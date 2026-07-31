@@ -3,12 +3,20 @@
 var App=window.App;
 
 /* ════════════════════════════════════════════════════════════════════
- * App.Symbols — 소자 심볼 Canvas 렌더링
+ * App.Symbols — 소자 심볼 렌더링
  *
  *   좌표 규약: 모든 그리기 함수는 (cx,cy) 중심, r=size/2 반지름 기준.
  *   심볼은 좌우 단자(±r)를 잇는 가로선 위에 그려진다.
  *   회전은 draw()에서 ctx 변환으로 일괄 처리 (개별 함수는 rotation 무관).
  *   선 두께 = size*0.042 (draw에서 설정), 색상은 opts.color로 오버라이드.
+ *
+ *   ── 소자 기하는 변경 금지 ────────────────────────────────────────
+ *   아래 그리기 함수들의 좌표·비율은 이미 완성된 디자인이다. 수능 지면
+ *   규격 적용은 **색(검정 잉크)·서체·선 굵기**에만 해당하며 모양은 그대로다.
+ *
+ *   ctx 인자는 CanvasRenderingContext2D 또는 App.SN.Recorder 를 받는다.
+ *   둘 다 같은 경로 API 를 제공하므로 화면과 SVG 내보내기가 **같은 코드**를
+ *   통과한다 → 보이는 그림과 내보낸 벡터의 기하가 100% 일치한다.
  * ════════════════════════════════════════════════════════════════════ */
 App.Symbols=(function(){
 
@@ -117,7 +125,19 @@ App.Symbols=(function(){
 
   /* ════════════════════════════════════════════════════════════════
    * 값 라벨 (소자 아래 표시)
+   *
+   *   수능 지면 규격: 배경 상자 없이 검정 글자만 둔다. 도선 위에 겹칠 때를
+   *   대비해 흰색 헤일로(외곽선)를 깔아 가독성을 확보한다.
    * ════════════════════════════════════════════════════════════════ */
+  function labelOffsetRatio(type){
+    /* 전원은 심볼이 크므로 라벨을 더 아래로 */
+    return (type===TYPE.DC_SOURCE||type===TYPE.AC_SOURCE)?0.52:0.44;
+  }
+  function labelFontSize(cellPx){
+    var FS=App.SN.FS;
+    return Math.max(FS.valueMin,Math.min(FS.valueMax,cellPx*0.26));
+  }
+
   function drawLabel(ctx,comp,cx,cy,cellPx){
     var type=comp.type;
     if(type===TYPE.JUNCTION_3||type===TYPE.JUNCTION_4) return;  // 분기점은 라벨 없음
@@ -125,34 +145,9 @@ App.Symbols=(function(){
     var text=_makeLabel(comp);
     if(!text) return;
 
-    var fs=Math.max(10,Math.min(14,cellPx*0.26));   // 폰트 크기 (셀 비례, 10~14px)
-    ctx.save();
-    ctx.font='bold '+fs+'px "Courier New",monospace';
-    ctx.textAlign='center'; ctx.textBaseline='top';
-    /* 전원은 심볼이 크므로 라벨을 더 아래로 */
-    var lyOffset=(type===TYPE.DC_SOURCE||type===TYPE.AC_SOURCE)?0.52:0.44;
-    var ly=cy+cellPx*lyOffset;
-    var tw=ctx.measureText(text).width+10;
-    /* 배경 알약 박스 (진한 불투명 + 파란 테두리) */
-    ctx.fillStyle='rgba(4,8,18,0.92)';
-    ctx.strokeStyle='rgba(60,120,200,0.55)';
-    ctx.lineWidth=0.8;
-    _pill(ctx,cx-tw/2,ly-2,tw,fs+5,3);
-    ctx.fill(); ctx.stroke();
-    /* 텍스트 (밝은 흰색 + 글로우) */
-    ctx.fillStyle='#e8f4ff';
-    ctx.shadowColor='#60b8ff'; ctx.shadowBlur=4;
-    ctx.fillText(text,cx,ly);
-    ctx.restore();
-  }
-
-  /* 둥근 사각형(알약) 경로 생성 — 라벨 배경용 */
-  function _pill(ctx,x,y,w,h,r){
-    ctx.beginPath();
-    ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
-    ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r); ctx.lineTo(x+r,y+h);
-    ctx.arcTo(x,y+h,x,y+h-r,r); ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
-    ctx.closePath();
+    var fs=labelFontSize(cellPx);
+    var ly=cy+cellPx*labelOffsetRatio(type);
+    App.SN.label(ctx,text,cx,ly,fs,{baseline:'top',italic:true,halo:3});
   }
 
   /* 소자 값 → 표시 문자열 (SI 접두어 자동 선택) */
@@ -192,13 +187,16 @@ App.Symbols=(function(){
   DRAWERS[TYPE.JUNCTION_4]=function(ctx,cx,cy,r){ drawJunction(ctx,cx,cy,r,4); };
 
   /* draw: 회전 변환 + 스타일 설정 후 타입별 그리기 함수 호출
-   *   opts.color : 선/채움 색상 오버라이드 (촬영 모드에서 '#000000') */
+   *   ctx        : Canvas 2D 컨텍스트 또는 App.SN.Recorder
+   *   opts.color : 선/채움 색상 오버라이드 (기본 = 지면 잉크 검정)
+   *   opts.lineWidth : 선 굵기 오버라이드 */
   function draw(ctx,type,cx,cy,size,rotation,opts){
     opts=opts||{};
     ctx.save();
     ctx.translate(cx,cy); ctx.rotate((rotation||0)*Math.PI/180); ctx.translate(-cx,-cy);
-    ctx.lineWidth=Math.max(1.5,size*.042);
-    var col=opts.color||'#c8e0f4';
+    ctx.lineWidth=opts.lineWidth||Math.max(1.5,size*.042);
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    var col=opts.color||App.SN.TOKENS.ink;
     ctx.strokeStyle=col; ctx.fillStyle=col;
     var fn=DRAWERS[type];
     if(fn) fn(ctx,cx,cy,size/2);
@@ -210,10 +208,10 @@ App.Symbols=(function(){
     var ctx=canvas.getContext('2d');
     var w=canvas.width,h=canvas.height;
     ctx.clearRect(0,0,w,h);
-    draw(ctx,type,w/2,h/2,Math.min(w,h)*.78,0,{color:'#4a90d9'});
+    draw(ctx,type,w/2,h/2,Math.min(w,h)*.78,0,{color:App.SN.TOKENS.ink});
   }
 
-  return{draw,drawLabel,drawMini};
+  return{draw,drawLabel,drawMini,makeLabel:_makeLabel,labelFontSize,labelOffsetRatio};
 })();
 
 }());

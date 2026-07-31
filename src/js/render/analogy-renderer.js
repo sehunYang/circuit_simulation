@@ -367,13 +367,15 @@ App.AnalogyRenderer=(function(){
     var sizeZ=Math.max(12,(bb.max.z-bb.min.z)+8);
     var cx=(bb.max.x+bb.min.x)/2, cz=(bb.max.z+bb.min.z)/2;
     var g=new THREE.PlaneGeometry(sizeX,sizeZ);
-    var m=new THREE.MeshStandardMaterial({color:0x0a1322,roughness:1,metalness:0});
+    /* 바닥 — 지면(밝은 회색) 톤. 소자 색은 의미(물=파랑 등)라 그대로 두고,
+     * 환경만 밝게 맞춰 앱 전체가 한 벌로 읽히게 한다. */
+    var m=new THREE.MeshStandardMaterial({color:0xe4e7ec,roughness:1,metalness:0});
     var plane=new THREE.Mesh(g,m);
     plane.rotation.x=-Math.PI/2; plane.position.set(cx,-0.6,cz);
     _scene.add(plane);
     /* 격자선 */
-    var grid=new THREE.GridHelper(Math.max(sizeX,sizeZ),Math.round(Math.max(sizeX,sizeZ)/SP),0x1c3a5c,0x14223c);
-    grid.material.opacity=0.25; grid.material.transparent=true;
+    var grid=new THREE.GridHelper(Math.max(sizeX,sizeZ),Math.round(Math.max(sizeX,sizeZ)/SP),0x9aa2b0,0xc2c8d2);
+    grid.material.opacity=0.5; grid.material.transparent=true;
     grid.position.set(cx,-0.58,cz);
     _scene.add(grid);
     /* 카메라 프레이밍 */
@@ -1215,20 +1217,22 @@ App.AnalogyRenderer=(function(){
     rec.last=key;
     var ctx=rec.ctx, W=rec.cv.width, H=rec.cv.height, pad=rec.pad;
     ctx.clearRect(0,0,W,H);
-    ctx.fillStyle='rgba(8,14,28,0.85)';
+    /* 지면 톤 라벨 — 흰 칩 + 검정 글자 */
+    var F=App.SN.TOKENS.font;
+    ctx.fillStyle='rgba(255,255,255,0.94)';
     _roundRect(ctx,0,0,W,H,14); ctx.fill();
-    ctx.strokeStyle='rgba(74,144,217,0.6)'; ctx.lineWidth=2.5;
+    ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=2.5;
     _roundRect(ctx,1.5,1.5,W-3,H-3,13); ctx.stroke();
     ctx.textAlign='center'; ctx.textBaseline='top';
     /* 이름 */
-    ctx.font='700 '+rec.fs1+'px sans-serif'; ctx.fillStyle='#9ecfff';
+    ctx.font='700 '+rec.fs1+'px '+F; ctx.fillStyle='#111318';
     ctx.fillText(rec.name, W/2, pad);
     /* 특성값 */
-    ctx.font='600 '+rec.fs2+'px monospace'; ctx.fillStyle='#7ec8f0';
+    ctx.font='italic '+rec.fs2+'px '+F; ctx.fillStyle='#3d4453';
     ctx.fillText(rec.val, W/2, pad+rec.fs1+4);
-    /* 실시간 물리량 (#2) — 주황 강조 */
+    /* 실시간 물리량 (#2) — 강조 */
     if(rec.hasMetric){
-      ctx.font='700 '+rec.fs3+'px monospace'; ctx.fillStyle='#ffb347';
+      ctx.font='700 italic '+rec.fs3+'px '+F; ctx.fillStyle='#b45309';
       ctx.fillText(metric, W/2, pad+rec.fs1+rec.fs2+10);
     }
     if(rec.tex) rec.tex.needsUpdate=true;
@@ -1281,16 +1285,17 @@ App.AnalogyRenderer=(function(){
     rec.last=key;
     var ctx=rec.ctx, W=rec.cv.width, H=rec.cv.height;
     ctx.clearRect(0,0,W,H);
-    ctx.fillStyle='rgba(8,16,30,0.85)';
+    var F2=App.SN.TOKENS.font;
+    ctx.fillStyle='rgba(255,255,255,0.94)';
     _roundRect(ctx,0,0,W,H,16); ctx.fill();
-    ctx.strokeStyle='rgba(120,180,230,0.55)'; ctx.lineWidth=3;
+    ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=3;
     _roundRect(ctx,1.5,1.5,W-3,H-3,15); ctx.stroke();
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    /* 전류 I (위, 황색) — #1 색 구분·큰 폰트 */
-    ctx.font='700 44px monospace'; ctx.fillStyle='#ffd24a';
+    /* 전류 I (위) — 전위 V 와 색으로 구분 */
+    ctx.font='700 italic 44px '+F2; ctx.fillStyle='#b45309';
     ctx.fillText(iTxt, W/2, H*0.30);
-    /* 전위 V (아래, 청록색 — 높이=전압 강조) */
-    ctx.font='700 42px monospace'; ctx.fillStyle='#5fe0c0';
+    /* 전위 V (아래 — 높이=전압 강조) */
+    ctx.font='700 italic 42px '+F2; ctx.fillStyle='#0e7490';
     ctx.fillText(vTxt, W/2, H*0.72);
     rec.tex.needsUpdate=true;
   }
@@ -1482,8 +1487,8 @@ App.AnalogyRenderer=(function(){
     var div=document.createElement('div');
     div.id='analogy-ctrl';
     div.style.cssText='position:absolute;bottom:72px;right:12px;z-index:20;'+
-      'background:rgba(10,16,30,0.95);border:1px solid #1e3050;border-radius:10px;'+
-      'padding:10px;backdrop-filter:blur(10px);box-shadow:0 4px 20px rgba(0,0,0,0.5);'+
+      'background:var(--bg-glass);border:1px solid var(--border-base);border-radius:10px;'+
+      'padding:10px;backdrop-filter:blur(10px);box-shadow:var(--shadow-panel);'+
       'display:flex;flex-direction:row;gap:8px;align-items:center;';
 
     /* ── 시작/정지 버튼 (기호만) ── */
@@ -1491,7 +1496,7 @@ App.AnalogyRenderer=(function(){
     btn.id='analogy-play-btn';
     btn.title='시뮬레이션 시작/정지';
     btn.style.cssText='width:44px;height:44px;border-radius:8px;border:1px solid;font-size:18px;'+
-      'font-family:monospace;cursor:pointer;font-weight:700;transition:all 0.15s;'+
+      'font-family:var(--font);cursor:pointer;font-weight:700;transition:all 0.15s;'+
       'display:flex;align-items:center;justify-content:center;';
     btn.addEventListener('click',function(){ _playing?_stop():_play(); });
     btn.addEventListener('pointerdown',function(e){e.stopPropagation();});
@@ -1503,7 +1508,7 @@ App.AnalogyRenderer=(function(){
     lblBtn.title='소자 특성값·전류·전위 라벨 표시/숨김';
     lblBtn.textContent='Ω';
     lblBtn.style.cssText='width:44px;height:44px;border-radius:8px;border:1px solid;font-size:18px;'+
-      'font-family:monospace;cursor:pointer;font-weight:700;transition:all 0.15s;'+
+      'font-family:var(--font);cursor:pointer;font-weight:700;transition:all 0.15s;'+
       'display:flex;align-items:center;justify-content:center;';
     lblBtn.addEventListener('click',function(){ _toggleLabels(); });
     lblBtn.addEventListener('pointerdown',function(e){e.stopPropagation();});
@@ -1516,19 +1521,19 @@ App.AnalogyRenderer=(function(){
     var hud=document.createElement('div');
     hud.id='analogy-hud';
     hud.style.cssText='position:absolute;top:14px;right:14px;z-index:20;'+
-      'background:rgba(10,16,30,0.92);border:1px solid #244468;border-radius:12px;'+
-      'padding:12px 18px;backdrop-filter:blur(10px);box-shadow:0 4px 20px rgba(0,0,0,0.55);'+
-      'font-family:monospace;text-align:right;min-width:180px;pointer-events:none;';
+      'background:var(--bg-glass);border:1px solid var(--border-base);border-radius:12px;'+
+      'padding:12px 18px;backdrop-filter:blur(10px);box-shadow:var(--shadow-panel);'+
+      'font-family:var(--font);text-align:right;min-width:180px;pointer-events:none;';
     var hudTitle=document.createElement('div');
-    hudTitle.style.cssText='font-size:10px;color:#4a90d9;letter-spacing:2px;font-weight:700;text-transform:uppercase;margin-bottom:4px';
+    hudTitle.style.cssText='font-size:10px;color:var(--text-title);letter-spacing:2px;font-weight:700;text-transform:uppercase;margin-bottom:4px';
     hudTitle.textContent='SIMULATION TIME';
     var hudTimeEl=document.createElement('div');
     hudTimeEl.id='analogy-hud-t';
-    hudTimeEl.style.cssText='font-size:26px;color:#9ecfff;font-weight:700;line-height:1.1';
+    hudTimeEl.style.cssText='font-size:26px;color:var(--text-base);font-weight:700;line-height:1.1';
     hudTimeEl.textContent='t = 0 s';
     var hudTauEl=document.createElement('div');
     hudTauEl.id='analogy-hud-tau';
-    hudTauEl.style.cssText='font-size:12px;color:#6aa0d0;margin-top:4px';
+    hudTauEl.style.cssText='font-size:12px;color:var(--text-dim);margin-top:4px';
     hudTauEl.textContent='τ = —';
     hud.appendChild(hudTitle); hud.appendChild(hudTimeEl); hud.appendChild(hudTauEl);
     document.getElementById('canvas-container').appendChild(hud);
@@ -1540,11 +1545,11 @@ App.AnalogyRenderer=(function(){
     if(btn){
       if(_playing){
         btn.textContent='■';
-        btn.style.background='#3a1a10';btn.style.borderColor='#7a3020';btn.style.color='#f09070';
+        btn.style.background='#fdeaea';btn.style.borderColor='#f0c0c0';btn.style.color='#b42318';
         btn.title='정지 (초기화)';
       } else {
         btn.textContent='▶';
-        btn.style.background='#13351c';btn.style.borderColor='#2a7040';btn.style.color='#70d090';
+        btn.style.background='#e6f4ec';btn.style.borderColor='#a8d5bd';btn.style.color='#128a53';
         btn.title='시뮬레이션 시작';
       }
     }
@@ -1552,9 +1557,9 @@ App.AnalogyRenderer=(function(){
     var lblBtn=document.getElementById('analogy-label-btn');
     if(lblBtn){
       if(_labelsVisible){
-        lblBtn.style.background='#13243a';lblBtn.style.borderColor='#2d6fc0';lblBtn.style.color='#7ec8f0';
+        lblBtn.style.background='#e3edfd';lblBtn.style.borderColor='#2563eb';lblBtn.style.color='#1d4ed8';
       } else {
-        lblBtn.style.background='#161b28';lblBtn.style.borderColor='#293650';lblBtn.style.color='#46627f';
+        lblBtn.style.background='#ffffff';lblBtn.style.borderColor='#c9ced6';lblBtn.style.color='#8b93a1';
       }
     }
     /* HUD 시간·τ 갱신 (#2) */
@@ -1589,8 +1594,9 @@ App.AnalogyRenderer=(function(){
     if(_hintEl)_hintEl.remove();
     _hintEl=document.createElement('div');
     _hintEl.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);'+
-      'z-index:15;color:#5a7a9a;font-size:13px;font-family:monospace;text-align:center;'+
-      'background:rgba(10,16,30,0.85);padding:14px 20px;border-radius:10px;border:1px solid #1e3050;pointer-events:none';
+      'z-index:15;color:var(--text-base);font-size:13px;font-family:var(--font);text-align:center;'+
+      'background:var(--bg-glass);padding:14px 20px;border-radius:10px;'+
+      'border:1px solid var(--border-base);box-shadow:var(--shadow-panel);pointer-events:none';
     _hintEl.textContent=msg;
     document.getElementById('canvas-container').appendChild(_hintEl);
   }
@@ -1720,13 +1726,14 @@ App.AnalogyRenderer=(function(){
     _renderer.setSize(W,H);
 
     _scene=new THREE.Scene();
-    _scene.fog=new THREE.FogExp2(0x0a0e18,0.012);
+    /* 안개·조명도 밝은 지면 톤으로 (소자 고유색은 그대로 유지) */
+    _scene.fog=new THREE.FogExp2(0xeceef1,0.012);
     _camera=new THREE.PerspectiveCamera(48,W/H,0.1,500);
 
     /* 조명 */
-    _scene.add(new THREE.AmbientLight(0x8fb0d8,0.7));
-    var dir=new THREE.DirectionalLight(0xffffff,0.9); dir.position.set(6,14,8); _scene.add(dir);
-    var dir2=new THREE.DirectionalLight(0x4060a0,0.4); dir2.position.set(-8,6,-6); _scene.add(dir2);
+    _scene.add(new THREE.AmbientLight(0xf2f4f7,0.85));
+    var dir=new THREE.DirectionalLight(0xffffff,0.85); dir.position.set(6,14,8); _scene.add(dir);
+    var dir2=new THREE.DirectionalLight(0xd8dee8,0.45); dir2.position.set(-8,6,-6); _scene.add(dir2);
 
     /* Cannon 물리 엔진 준비 (있으면) */
     _haveCannon=(typeof CANNON!=='undefined');

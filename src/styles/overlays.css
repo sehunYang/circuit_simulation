@@ -3,22 +3,27 @@
  * ════════════════════════════════════════════════════════════════ */
 #toast {
   position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
-  background: #9b2c2c; border: 1px solid #c53030; color: #fff;
-  padding: 9px 20px; border-radius: 6px; font-size: 12px; font-family: var(--font-mono);
+  background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger-text);
+  padding: 9px 20px; border-radius: 6px; font-size: 12px; font-family: var(--font); font-weight: 700;
   z-index: 9999; opacity: 0; pointer-events: none; transition: opacity 0.3s;
-  white-space: nowrap; box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+  white-space: nowrap; box-shadow: var(--shadow-panel);
 }
 #toast.visible { opacity: 1; }
 
 #conn-hint {
   position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
-  background: rgba(22,60,130,0.9); border: 1px solid #3a7bd5; color: var(--text-accent2);
-  padding: 5px 16px; border-radius: 20px; font-size: 11px; font-family: var(--font-mono);
+  background: var(--bg-glass); border: 1px solid var(--border-active); color: var(--text-accent);
+  padding: 5px 16px; border-radius: 20px; font-size: 11px; font-family: var(--font);
   z-index: 15; pointer-events: none; opacity: 0; transition: opacity 0.25s; white-space: nowrap;
+  backdrop-filter: blur(8px); box-shadow: var(--shadow-panel);
 }
 #conn-hint.visible { opacity: 1; }
 
+/* 뷰포트 표시 — 좌하단은 undo-bar 가 쓰므로 우하단에 둔다
+ * (형제 프로젝트 mechanics_simulation 의 #zoom-indicator 와 같은 자리) */
 #info-overlay {
-  position: absolute; bottom: 14px; left: 8px; font-size: 10px; color: #2a3e58;
-  font-family: var(--font-mono); z-index: 5; pointer-events: none; letter-spacing: 0.5px;
+  position: absolute; bottom: 8px; right: 8px; font-size: 10px; color: var(--text-dim);
+  font-family: var(--font); z-index: 5; pointer-events: none; letter-spacing: 0.5px;
+  background: var(--bg-glass); border: 1px solid var(--border-dim);
+  border-radius: var(--radius-sm); padding: 3px 7px; backdrop-filter: blur(8px);
 }

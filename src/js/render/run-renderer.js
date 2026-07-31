@@ -234,27 +234,30 @@ App.RunRenderer=(function(){
         var pos  = _getPathPoint(path, p.t);
         if(pos.x<-10||pos.x>W+10||pos.y<-10||pos.y>H+10) return;
 
-        /* 꼬리: tail이 null이면(방금 wrap) 그리지 않음 */
+        /* 꼬리: tail이 null이면(방금 wrap) 그리지 않음.
+         * 수능 지면 규격 — 색이 아니라 농도(회색)로만 잔상을 표현한다. */
         if(p.tail != null){
           var tail = _getPathPoint(path, p.tail);
           _ctx.save();
           _ctx.beginPath();
           _ctx.moveTo(tail.x, tail.y);
           _ctx.lineTo(pos.x,  pos.y);
-          _ctx.strokeStyle = 'rgba(80,160,255,0.28)';
+          _ctx.strokeStyle = 'rgba(0,0,0,0.16)';
           _ctx.lineWidth   = ELECTRON_RADIUS*1.4;
           _ctx.lineCap     = 'round';
           _ctx.stroke();
           _ctx.restore();
         }
 
-        /* 전자 본체 */
+        /* 전자 본체 — 검정 원 + 흰 테두리.
+         * 검정 도선 위를 지나므로 흰 테두리가 있어야 알갱이로 읽힌다. */
         _ctx.save();
         _ctx.beginPath();
         _ctx.arc(pos.x, pos.y, ELECTRON_RADIUS, 0, Math.PI*2);
-        _ctx.fillStyle = '#60c8ff';
-        _ctx.shadowColor = '#60c8ff';
-        _ctx.shadowBlur  = 6;
+        _ctx.strokeStyle = App.SN.TOKENS.paper;
+        _ctx.lineWidth   = 2;
+        _ctx.stroke();
+        _ctx.fillStyle = App.SN.TOKENS.ink;
         _ctx.fill();
         _ctx.restore();
       });
@@ -286,6 +289,7 @@ App.RunRenderer=(function(){
         var ang=Math.atan2(ey-sy, ex-sx);
         if(convDir < 0) ang += Math.PI;
 
+        /* 수능 규격 화살표: 속 찬 검정 삼각 화살촉 (+ 흰 테두리로 띄움) */
         _ctx.save();
         _ctx.translate(mx,my); _ctx.rotate(ang);
         _ctx.beginPath();
@@ -293,7 +297,9 @@ App.RunRenderer=(function(){
         _ctx.lineTo(-ARROW_SIZE*0.55, -ARROW_SIZE*0.5);
         _ctx.lineTo(-ARROW_SIZE*0.55,  ARROW_SIZE*0.5);
         _ctx.closePath();
-        _ctx.fillStyle='rgba(255,160,40,0.88)';
+        _ctx.strokeStyle=App.SN.TOKENS.paper; _ctx.lineWidth=2.4; _ctx.lineJoin='round';
+        _ctx.stroke();
+        _ctx.fillStyle=App.SN.TOKENS.ink;
         _ctx.fill();
         _ctx.restore();
       }
@@ -304,26 +310,25 @@ App.RunRenderer=(function(){
   function _drawIncompleteOverlay(){
     var W=_cv.width, H=_cv.height;
     _ctx.save();
-    _ctx.fillStyle='rgba(8,12,28,0.65)';
+    /* 지면 위 안내 — 흰 바탕을 가리지 않고 살짝 흐리게만 덮는다 */
+    _ctx.fillStyle='rgba(255,255,255,0.72)';
     _ctx.fillRect(0,0,W,H);
     var msg = App.State.solverResult&&App.State.solverResult.error
       ? '⚠ '+App.State.solverResult.error
       : '회로가 완성되지 않았습니다';
     var fs=16;
-    _ctx.font='bold '+fs+'px "Courier New",monospace';
-    _ctx.textAlign='center'; _ctx.textBaseline='middle';
+    _ctx.font=fs+'px '+App.SN.TOKENS.fontKo;
     var tw=_ctx.measureText(msg).width+32;
     var bx=W/2, by=H/2;
-    _ctx.fillStyle='rgba(30,50,90,0.92)';
-    _ctx.strokeStyle='#3a6ab0';
-    _ctx.lineWidth=1.5;
+    _ctx.fillStyle='rgba(255,255,255,0.97)';
+    _ctx.strokeStyle='#c9ced6';
+    _ctx.lineWidth=1;
     _ctx.beginPath();
-    if(_ctx.roundRect) _ctx.roundRect(bx-tw/2,by-24,tw,42,8);
-    else _ctx.rect(bx-tw/2,by-24,tw,42);
+    if(_ctx.roundRect) _ctx.roundRect(bx-tw/2,by-21,tw,42,8);
+    else _ctx.rect(bx-tw/2,by-21,tw,42);
     _ctx.fill(); _ctx.stroke();
-    _ctx.fillStyle='#88bbee';
-    _ctx.fillText(msg,bx,by);
     _ctx.restore();
+    App.SN.label(_ctx,msg,bx,by,fs,{ko:true});
   }
 
   /* ── 메인 애니메이션 루프 ── */

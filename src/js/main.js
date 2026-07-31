@@ -48,8 +48,7 @@ App.Main=(function(){
     var clrBtn=document.createElement('div');clrBtn.className='sidebar-item sidebar-clear';
     clrBtn.title='회로 초기화';
     var clrLbl=document.createElement('span');clrLbl.className='s-label';clrLbl.textContent='초기화';
-    clrLbl.style.color='#804040';
-    var clrIcon=document.createElement('span');clrIcon.style.cssText='font-size:16px;line-height:1;color:#804040';clrIcon.textContent='⌫';
+    var clrIcon=document.createElement('span');clrIcon.style.cssText='font-size:16px;line-height:1;color:var(--danger-text)';clrIcon.textContent='⌫';
     clrBtn.appendChild(clrIcon);clrBtn.appendChild(clrLbl);
     clrBtn.addEventListener('pointerdown',function(e){
       e.stopPropagation();
@@ -82,64 +81,10 @@ App.Main=(function(){
     sb.appendChild(clrBtn);
   }
 
+  /* 촬영 — 흰 바탕·검정 선의 SVG 파일로 저장 (App.Capture 가 담당).
+   * PNG 대신 벡터로 내보내므로 학습지·시험지에 확대해 붙여도 깨지지 않는다. */
   function _captureCircuit(){
-    var srcCv=document.getElementById('canvas-main');
-    if(!srcCv) return;
-    var W=srcCv.width, H=srcCv.height;
-    var off=document.createElement('canvas');
-    off.width=W; off.height=H;
-    var ctx=off.getContext('2d');
-    ctx.clearRect(0,0,W,H);
-    var vt=App.State.viewTransform;
-    var cellPx=CELL_SIZE*vt.scale;
-    var lw=Math.max(1.5,cellPx*0.042);
-
-    /* 도선 */
-    ctx.save();
-    ctx.strokeStyle='#000000'; ctx.lineWidth=lw;
-    ctx.lineCap='round'; ctx.lineJoin='round';
-    App.State.wires.forEach(function(wire){
-      var from=App.State.getComponent(wire.fromId);
-      var to=App.State.getComponent(wire.toId);
-      if(!from||!to) return;
-      var p1=App.Geo.getPortPixel(from,wire.fromPort);
-      var p2=App.Geo.getPortPixel(to,wire.toPort);
-      var path=App.Geo.calcWirePath(p1.x,p1.y,p2.x,p2.y,wire.direction);
-      ctx.beginPath();
-      ctx.moveTo(path[0].x,path[0].y);
-      for(var i=1;i<path.length;i++) ctx.lineTo(path[i].x,path[i].y);
-      ctx.stroke();
-    });
-    ctx.restore();
-
-    /* 소자 심볼 */
-    App.State.components.forEach(function(comp){
-      var gp=App.Geo.gridToPixel(comp.gridX,comp.gridY);
-      var cx=gp.x+cellPx/2, cy=gp.y+cellPx/2;
-      if(comp.type===TYPE.JUNCTION_3||comp.type===TYPE.JUNCTION_4){
-        ctx.save();
-        ctx.strokeStyle='#000000'; ctx.lineWidth=lw; ctx.lineCap='round';
-        App.State.wires.forEach(function(w){
-          var isFrom=(w.fromId===comp.id), isTo=(w.toId===comp.id);
-          if(!isFrom&&!isTo) return;
-          var jPortPx=isFrom?App.Geo.getPortPixel(comp,w.fromPort):App.Geo.getPortPixel(comp,w.toPort);
-          ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(jPortPx.x,jPortPx.y); ctx.stroke();
-        });
-        ctx.fillStyle='#000000';
-        ctx.beginPath(); ctx.arc(cx,cy,lw/2,0,Math.PI*2); ctx.fill();
-        ctx.restore();
-        return;
-      }
-      App.Symbols.draw(ctx,comp.type,cx,cy,cellPx,comp.rotation,{color:'#000000'});
-    });
-
-    off.toBlob(function(blob){
-      var url=URL.createObjectURL(blob);
-      var a=document.createElement('a');
-      a.href=url; a.download='circuit_'+Date.now()+'.png';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(function(){URL.revokeObjectURL(url);},1000);
-    },'image/png');
+    App.Capture.captureImage();
   }
 
   function _updateModeBar(mode){

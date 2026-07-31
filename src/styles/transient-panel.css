@@ -3,7 +3,7 @@
  * ════════════════════════════════════════════════════════════════ */
 #transient-panel {
   position: absolute; top: 12px; right: 12px; z-index: 25;
-  background: var(--bg-panel-deep); border: 1px solid #2a4878;
+  background: var(--bg-panel-deep); border: 1px solid var(--border-base);
   border-radius: 12px; padding: 12px 14px; width: 380px;
   max-width: calc(100vw - 24px); box-sizing: border-box;
   backdrop-filter: var(--blur); box-shadow: var(--shadow-float);
@@ -13,21 +13,22 @@
 #transient-panel .tp-title {
   font-size: 12px; color: var(--text-accent); font-weight: 700;
   letter-spacing: 1px; text-transform: uppercase;
-  border-bottom: 1px solid #1e3860; padding-bottom: 7px; margin-bottom: 10px;
+  border-bottom: 1px solid var(--border-dim); padding-bottom: 7px; margin-bottom: 10px;
   display: flex; align-items: center; justify-content: space-between;
 }
-#transient-panel .tp-close { cursor: pointer; color: #4a7aaa; font-size: 16px; line-height: 1; }
-#transient-panel .tp-close:hover { color: #a0d8f8; }
-#transient-canvas { width: 100%; display: block; border-radius: var(--radius-sm); }
+#transient-panel .tp-close { cursor: pointer; color: var(--text-dim); font-size: 16px; line-height: 1; }
+#transient-panel .tp-close:hover { color: var(--text-accent); }
+/* 그래프 캔버스 = 흰 지면 (수능 그래프 문항과 같은 바탕) */
+#transient-canvas { width: 100%; display: block; border-radius: var(--radius-sm); background: #ffffff; border: 1px solid var(--border-dim); }
 #transient-toggles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .tp-toggle {
-  font-size: 11px; font-family: var(--font-mono); padding: 3px 10px;
+  font-size: 11px; font-family: var(--font); padding: 3px 10px;
   border-radius: var(--radius-sm); border: 1px solid; cursor: pointer;
-  transition: opacity 0.15s, background 0.15s; opacity: 0.5; font-weight: 600;
+  transition: opacity 0.15s, background 0.15s; opacity: 0.45; font-weight: 600;
 }
 .tp-toggle.active { opacity: 1; }
-.tp-toggle:hover  { opacity: 0.85; }
-#transient-legend { margin-top: 7px; font-size: 11px; font-family: var(--font-mono); color: #7090b0; display: flex; gap: 10px; flex-wrap: wrap; line-height: 1.6; }
+.tp-toggle:hover  { opacity: 0.8; }
+#transient-legend { margin-top: 7px; font-size: 11px; font-family: var(--font); color: var(--text-dim); display: flex; gap: 10px; flex-wrap: wrap; line-height: 1.6; }
 /* KaTeX 수식 레이블 (그래프 오버레이) */
 .tg-formula-label .katex { font-size: 10px !important; }
 .tg-formula-label .katex-html { color: inherit; }

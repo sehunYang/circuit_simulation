@@ -1,7 +1,8 @@
 /* ════════════════════════════════════════════════════════════════
  * 3. 캔버스 영역
  * ════════════════════════════════════════════════════════════════ */
-#canvas-container { flex: 1; position: relative; overflow: hidden; background: var(--bg-app); }
+/* 캔버스 무대 = 흰 지면 (수능 문항 그림과 같은 바탕) */
+#canvas-container { flex: 1; position: relative; overflow: hidden; background: var(--bg-stage); }
 #canvas-bg, #canvas-main, #canvas-anim { position: absolute; top: 0; left: 0; display: block; }
 #canvas-bg   { z-index: 1; }
 #canvas-main { z-index: 2; }
@@ -11,15 +12,15 @@
 #drag-ghost {
   position: fixed; pointer-events: none; z-index: 9998;
   display: none; transform: translate(-50%,-50%);
-  opacity: 0.82; filter: drop-shadow(0 0 8px #3a9de0);
+  opacity: 0.9; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.28));
 }
 
 /* 드래그 삭제 존 (canvas-container 기준 absolute) */
 #delete-zone {
   position: absolute; left: 9px; bottom: 60px; top: auto;
   width: var(--item-size);
-  border-radius: var(--radius-lg); border: 2px dashed #3a5a7a;
-  background: rgba(8,14,32,0.90); color: #3a5a7a; text-align: center;
+  border-radius: var(--radius-lg); border: 2px dashed var(--border-base);
+  background: var(--bg-glass); color: var(--text-dim); text-align: center;
   display: none; flex-direction: column; align-items: center; justify-content: flex-end;
   padding-bottom: 10px; gap: 4px;
   z-index: 20;   /* canvas-anim(3)보다 위 */
@@ -28,8 +29,8 @@
 }
 #delete-zone.visible { display: flex; }
 #delete-zone.hover {
-  border-color: #e05050; background: rgba(80,10,10,0.85); color: #ff8080;
-  box-shadow: 0 0 16px rgba(220,50,50,0.5);
+  border-color: #d05050; background: var(--danger-bg); color: var(--danger-text);
+  box-shadow: 0 0 0 3px rgba(208,80,80,0.18);
 }
 #delete-zone .dz-icon  { font-size: 20px; line-height: 1; }
-#delete-zone .dz-label { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; font-family: var(--font-mono); }
+#delete-zone .dz-label { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; font-family: var(--font); }

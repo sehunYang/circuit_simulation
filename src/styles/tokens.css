@@ -1,55 +1,76 @@
 /* ════════════════════════════════════════════════════════════════
  * 디자인 토큰 (CSS Custom Properties)
  * ──────────────────────────────────────────────────────────────
+ * 수능 지면(paper) 테마 — 2022~2026 수능 물리학 문항 그림은
+ * 흰 바탕에 검정 선 + 회색 채움뿐이다. 캔버스를 그 지면과 똑같이
+ * 맞추고, UI 크롬만 밝은 회색 계열로 둔다.
+ * (형제 프로젝트 mechanics_simulation 과 같은 규격)
+ *
  * 색상·간격·반경을 한 곳에서 관리. 값 변경 시 전체 일괄 반영됨.
  * ════════════════════════════════════════════════════════════════ */
 :root {
-  /* 배경 계열 */
-  --bg-app:        #0d0f1a;   /* 앱 전체 배경 */
-  --bg-sidebar:    #111827;   /* 사이드바 */
-  --bg-item:       #1a2438;   /* 사이드바 아이템 */
-  --bg-panel:      rgba(10,16,30,0.97);   /* 속성 패널 */
-  --bg-panel-deep: rgba(6,12,28,0.98);    /* 그래프 패널 */
-  --bg-glass:      rgba(17,24,39,0.90);   /* 반투명 버튼 */
-  --bg-popup:      rgba(8,14,32,0.98);    /* 값 입력 팝업 */
-  --bg-ctx:        rgba(14,22,40,0.97);   /* 컨텍스트 메뉴 */
+  /* ── 배경 계열 ── */
+  --bg-app:        #eceef1;   /* 앱 전체 배경 (지면 바깥) */
+  --bg-stage:      #ffffff;   /* 캔버스 무대 = 흰 지면 */
+  --bg-sidebar:    #f7f8fa;   /* 사이드바 */
+  --bg-item:       #ffffff;   /* 사이드바 아이템 */
+  --bg-panel:      rgba(255,255,255,0.98);   /* 속성 패널 */
+  --bg-panel-deep: rgba(255,255,255,0.99);   /* 그래프 패널 */
+  --bg-glass:      rgba(255,255,255,0.92);   /* 반투명 버튼 */
+  --bg-popup:      rgba(255,255,255,0.99);   /* 값 입력 팝업 */
+  --bg-ctx:        rgba(255,255,255,0.99);   /* 컨텍스트 메뉴 */
 
-  /* 테두리 계열 */
-  --border-dim:    #1e2d45;   /* 약한 구분선 */
-  --border-base:   #1e3050;   /* 기본 테두리 */
-  --border-item:   #253450;   /* 아이템 테두리 */
-  --border-active: #2d6fc0;   /* 활성 강조 */
-  --border-focus:  #4a90d9;   /* 입력 포커스 */
+  /* ── 테두리 계열 ── */
+  --border-dim:    #dde1e7;   /* 약한 구분선 */
+  --border-base:   #c9ced6;   /* 기본 테두리 */
+  --border-item:   #c9ced6;   /* 아이템 테두리 */
+  --border-active: #2563eb;   /* 활성 강조 */
+  --border-focus:  #3b82f6;   /* 입력 포커스 */
 
-  /* 텍스트 계열 */
-  --text-base:     #c8d6e5;   /* 기본 본문 */
-  --text-dim:      #506a88;   /* 흐린 텍스트 */
-  --text-label:    #607a99;   /* 라벨 */
-  --text-accent:   #7ec8f0;   /* 강조(하늘색) */
-  --text-accent2:  #9ecfff;   /* 강조(밝은 하늘) */
-  --text-title:    #4a90d9;   /* 제목 */
+  /* ── 텍스트 계열 ── */
+  --text-base:     #111318;   /* 기본 본문 = 지면 잉크 */
+  --text-dim:      #5a6270;   /* 흐린 텍스트 */
+  --text-label:    #6b7482;   /* 라벨 */
+  --text-accent:   #1d4ed8;   /* 강조(파랑) */
+  --text-accent2:  #2563eb;   /* 강조(밝은 파랑) */
+  --text-title:    #1d4ed8;   /* 제목 */
 
-  /* 위험(삭제) 계열 */
-  --danger-bg:     #3a1010;
-  --danger-border: #5a2020;
-  --danger-text:   #f08080;
+  /* ── 상호작용 ── */
+  --btn-h:         #e8ebf0;   /* 버튼 호버 배경 */
+  --sel-bg:        #e3edfd;   /* 선택 상태 배경 */
 
-  /* 형태 */
+  /* ── 위험(삭제) 계열 ── */
+  --danger-bg:     #fdeaea;
+  --danger-border: #f0c0c0;
+  --danger-text:   #b42318;
+
+  /* ── 지면 잉크 (캔버스 작도용 — JS 는 SN 토큰을 쓴다) ── */
+  --ink:           #000000;   /* 검정 선 */
+  --ink-fill:      #e8e8e8;   /* 연회색 채움 */
+
+  /* ── 형태 ── */
   --radius-sm:  4px;
   --radius-md:  8px;
   --radius-lg:  10px;
   --radius-xl:  14px;
   --radius-pill: 36px;
 
-  /* 효과 */
+  /* ── 효과 ── */
   --blur:        blur(12px);
-  --shadow-panel: 0 4px 20px rgba(0,0,0,0.5);
-  --shadow-float: 0 6px 32px rgba(0,0,0,0.7);
+  --shadow-panel: 0 2px 10px rgba(0,0,0,0.12);
+  --shadow-float: 0 4px 18px rgba(0,0,0,0.18);
 
-  /* 폰트 */
-  --font-mono: 'Courier New', 'Consolas', monospace;
+  /* ── 서체 ──
+     수능 문항지 조판과 같은 계열. 브라우저는 글리프 단위로 폴백하므로
+     한 스택에 둘을 넣으면 문자 종류에 따라 자동으로 갈린다.
+       · 영문·숫자·수식 → HyhwpEQ (HWP 설치 시 함께 깔리는 한글 수식 서체)
+       · 한글          → 맑은 고딕
+     HyhwpEQ 는 로컬 설치 서체라 HWP 가 없는 기기에서는 맑은 고딕/
+     sans-serif 로 폴백된다 — 형태는 유지되지만 자형이 다를 수 있다. */
+  --font:      'HyhwpEQ', 'HYhwpEQ', 'Malgun Gothic', '맑은 고딕', sans-serif;
+  --font-mono: 'HyhwpEQ', 'HYhwpEQ', 'Malgun Gothic', '맑은 고딕', sans-serif;
 
-  /* 레이아웃 치수 */
+  /* ── 레이아웃 치수 ── */
   --sidebar-w:   72px;   /* 데스크톱 사이드바 폭 */
   --item-size:   54px;   /* 사이드바 아이템 크기 */
   --btn-size:    36px;   /* 원형 버튼 크기 */

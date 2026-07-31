@@ -80,11 +80,11 @@ App.PropPanel=(function(){
 
     /* ── 유형 헤더 ── */
     var hdr=document.createElement('div');
-    hdr.style.cssText='color:#7ec8f0;font-weight:700;font-size:11px;margin-bottom:8px;'+
+    hdr.style.cssText='color:var(--text-accent);font-weight:700;font-size:11px;margin-bottom:8px;'+
                       'display:flex;align-items:center;justify-content:space-between';
     var typeSpan=document.createElement('span');typeSpan.textContent=LABELS[comp.type]||comp.type;
     var rotInfo=document.createElement('span');
-    rotInfo.style.cssText='color:#3a5a7a;font-size:10px';
+    rotInfo.style.cssText='color:var(--text-dim);font-size:10px';
     rotInfo.textContent=comp.rotation+'°';
     hdr.appendChild(typeSpan);hdr.appendChild(rotInfo);
     _content.appendChild(hdr);
@@ -122,8 +122,8 @@ App.PropPanel=(function(){
       var valBtn=document.createElement('button');
       valBtn.className='pp-input';
       valBtn.style.cssText='cursor:pointer;text-align:right;width:90px;padding:3px 8px;'+
-        'font-size:12px;font-family:monospace;font-weight:700;color:#e8f4ff;'+
-        'background:rgba(14,24,50,0.9);border:1px solid #2a5090;border-radius:6px;';
+        'font-size:12px;font-family:var(--font);font-weight:700;color:var(--text-base);'+
+        'background:#ffffff;border:1px solid var(--border-base);border-radius:6px;';
       function _refreshValBtn(){
         valBtn.textContent=(comp[f.key]*f.ds).toFixed(f.df)+' '+f.unit;
       }
@@ -246,13 +246,13 @@ App.PropPanel=(function(){
       }
     } else if(sr&&sr.error){
       var errDiv=document.createElement('div');
-      errDiv.style.cssText='background:rgba(100,20,20,0.30);border:1px solid #5a2020;'+
-        'border-radius:5px;padding:6px 8px;margin-top:2px;color:#f08a8a;font-size:10px;line-height:1.5';
+      errDiv.style.cssText='background:var(--danger-bg);border:1px solid var(--danger-border);'+
+        'border-radius:5px;padding:6px 8px;margin-top:2px;color:var(--danger-text);font-size:10px;line-height:1.5';
       errDiv.textContent='⚠ '+sr.error;
       mDiv.appendChild(errDiv);
     } else {
       var hint=document.createElement('div');
-      hint.style.cssText='color:#2d4a60;font-size:10px;text-align:center;padding:3px 0';
+      hint.style.cssText='color:var(--text-dim);font-size:10px;text-align:center;padding:3px 0';
       hint.textContent='— 회로 완성 후 자동 계산 —';mDiv.appendChild(hint);
     }
     _content.appendChild(mDiv);
@@ -294,8 +294,8 @@ App.PropPanel=(function(){
     var dirRow=document.createElement('div');dirRow.className='pp-row';
     var dk=document.createElement('span');dk.className='pp-key';dk.textContent='꺾임 방향';
     var tb=document.createElement('button');
-    tb.style.cssText='flex:none;padding:3px 10px;font-size:10px;cursor:pointer;font-family:monospace;'+
-                     'border-radius:4px;border:1px solid #1e4060;background:#162535;color:#60a8d8';
+    tb.style.cssText='flex:none;padding:3px 10px;font-size:10px;cursor:pointer;font-family:var(--font);'+
+                     'border-radius:4px;border:1px solid var(--border-base);background:#f1f5fb;color:var(--text-accent2)';
     tb.textContent=wire.direction==='H-first'?'H→V':'V→H';
     tb.addEventListener('click',function(){
       wire.direction=wire.direction==='H-first'?'V-first':'H-first';
@@ -307,7 +307,7 @@ App.PropPanel=(function(){
 
     /* ── 힌트 ── */
     var hintEl=document.createElement('div');
-    hintEl.style.cssText='color:#2a4a60;font-size:9px;text-align:center;padding:2px 0 4px';
+    hintEl.style.cssText='color:var(--text-dim);font-size:9px;text-align:center;padding:2px 0 4px';
     hintEl.textContent='◇ 핸들 탭으로도 방향 전환';_content.appendChild(hintEl);
 
     /* ── 도선 측정값 ── */
@@ -321,7 +321,7 @@ App.PropPanel=(function(){
       _content.appendChild(wMeas);
     } else if(sr2&&sr2.error){
       var wErr=document.createElement('div');
-      wErr.style.cssText='color:#f08a8a;font-size:10px;padding:4px 0;text-align:center';
+      wErr.style.cssText='color:var(--danger-text);font-size:10px;padding:4px 0;text-align:center';
       wErr.textContent='⚠ '+sr2.error;_content.appendChild(wErr);
     }
 
@@ -345,9 +345,12 @@ App.PropPanel=(function(){
     else v.textContent=val;
     row.appendChild(k);row.appendChild(v);return row;
   }
+  /* 상태 배지 — 지면 톤에 맞춰 연회색 배경 + 검정 글자.
+   *   bg 인자는 과거 다크 테마 색을 받던 자리로, 이제는 무시한다. */
   function _makeBadge(text,bg){
     var s=document.createElement('span');
-    s.style.cssText='background:'+bg+';border-radius:3px;padding:1px 5px;font-size:9px;color:#a0d0c0';
+    s.style.cssText='background:#eceef1;border:1px solid var(--border-dim);border-radius:3px;'+
+                    'padding:1px 5px;font-size:9px;color:var(--text-base)';
     s.textContent=text;return s;
   }
   function _btn(text,cls,onClick){
