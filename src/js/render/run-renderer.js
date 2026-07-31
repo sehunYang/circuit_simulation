@@ -19,8 +19,12 @@ App.RunRenderer=(function(){
   var ELECTRON_SPEED_SCALE   = 0.6;  // (예약)
   var ELECTRON_SPEED_MIN     = 8;    // 최소 속도 (px/s)
   var ELECTRON_SPEED_MAX     = 120;  // 최대 속도 (px/s)
-  var ELECTRON_RADIUS        = 3;    // 전자 반지름 (px)
+  var ELECTRON_RADIUS        = 4;    // 전자 반지름 (px)
   var ARROW_SIZE             = 9;    // 전류 방향 화살표 크기
+  /* 화살표를 도선에서 옆으로 빼는 거리.
+   * 검정 도선 위에 검정 화살표를 겹치면 "도선이 굵어진 곳"으로만 읽히므로
+   * 나란히 놓아 형태로 구분한다. (edit-renderer 와 같은 규칙) */
+  var ARROW_OFFSET           = Math.round(ARROW_SIZE*0.7+1.5);
   var MAX_PARTICLES          = 50;   // 도선당 최대 파티클 수
 
   var _cv, _ctx;
@@ -106,14 +110,14 @@ App.RunRenderer=(function(){
 
       pool.particles.forEach(function(p){
         if(p.dir !== newDir){
-          p.tail = null; p.visible = false; p.dir = newDir;
+          p.visible = false; p.dir = newDir;
         }
         p.speed = newSpd;
       });
 
       var target = Math.max(1, Math.min(MAX_PARTICLES, Math.round(absI * ELECTRON_DENSITY_SCALE)));
       while(pool.particles.length < target){
-        pool.particles.push({t:Math.random(), speed:newSpd, tail:null, dir:newDir, visible:true});
+        pool.particles.push({t:Math.random(), speed:newSpd, dir:newDir, visible:true});
       }
       if(pool.particles.length > target) pool.particles.length = target;
     });
@@ -158,7 +162,6 @@ App.RunRenderer=(function(){
         particles.push({
           t:       i / count,
           speed:   speed * (0.9 + Math.random() * 0.2),
-          tail:    null,
           dir:     electronDir,
           visible: true,
         });
@@ -195,16 +198,13 @@ App.RunRenderer=(function(){
       var pathLen = info ? info.len : 1;
 
       pool.particles.forEach(function(p){
-        var prev = p.t;
-        var next = prev + p.dir * (p.speed / pathLen) * dt;
+        var next = p.t + p.dir * (p.speed / pathLen) * dt;
 
         var wrapped = (next < 0 || next >= 1);
         if(wrapped){
-          p.t    = ((next % 1) + 1) % 1;
-          p.tail = null;
+          p.t       = ((next % 1) + 1) % 1;
           p.visible = false;
         } else {
-          p.tail    = prev;
           p.t       = next;
           p.visible = true;
         }
@@ -225,7 +225,7 @@ App.RunRenderer=(function(){
       var path = info.path;
 
       pool.particles.forEach(function(p){
-        /* wrap 직후 프레임: 본체·꼬리 모두 숨김 */
+        /* wrap 직후 프레임: 숨김 (경로 끝→시작 순간이동이 보이지 않게) */
         if(p.visible === false){
           p.visible = true;   // 다음 프레임부터 보임
           return;
@@ -234,31 +234,18 @@ App.RunRenderer=(function(){
         var pos  = _getPathPoint(path, p.t);
         if(pos.x<-10||pos.x>W+10||pos.y<-10||pos.y>H+10) return;
 
-        /* 꼬리: tail이 null이면(방금 wrap) 그리지 않음.
-         * 수능 지면 규격 — 색이 아니라 농도(회색)로만 잔상을 표현한다. */
-        if(p.tail != null){
-          var tail = _getPathPoint(path, p.tail);
-          _ctx.save();
-          _ctx.beginPath();
-          _ctx.moveTo(tail.x, tail.y);
-          _ctx.lineTo(pos.x,  pos.y);
-          _ctx.strokeStyle = 'rgba(0,0,0,0.16)';
-          _ctx.lineWidth   = ELECTRON_RADIUS*1.4;
-          _ctx.lineCap     = 'round';
-          _ctx.stroke();
-          _ctx.restore();
-        }
-
-        /* 전자 본체 — 검정 원 + 흰 테두리.
-         * 검정 도선 위를 지나므로 흰 테두리가 있어야 알갱이로 읽힌다. */
+        /* 전자 — 흰 속 + 굵은 검정 테두리 링.
+         * 지면 규격이라 색을 못 쓰므로 형태로 구분한다. 검정으로 채우면
+         * 검정 도선에 묻히지만, 링은 흰 속이 도선을 가리며 지나가므로
+         * "구슬이 굴러가는" 것으로 또렷하게 읽힌다. */
         _ctx.save();
         _ctx.beginPath();
         _ctx.arc(pos.x, pos.y, ELECTRON_RADIUS, 0, Math.PI*2);
-        _ctx.strokeStyle = App.SN.TOKENS.paper;
-        _ctx.lineWidth   = 2;
-        _ctx.stroke();
-        _ctx.fillStyle = App.SN.TOKENS.ink;
+        _ctx.fillStyle   = App.SN.TOKENS.paper;
         _ctx.fill();
+        _ctx.strokeStyle = App.SN.TOKENS.ink;
+        _ctx.lineWidth   = 1.8;
+        _ctx.stroke();
         _ctx.restore();
       });
     });
@@ -289,16 +276,18 @@ App.RunRenderer=(function(){
         var ang=Math.atan2(ey-sy, ex-sx);
         if(convDir < 0) ang += Math.PI;
 
-        /* 수능 규격 화살표: 속 찬 검정 삼각 화살촉 (+ 흰 테두리로 띄움) */
+        /* 수능 규격 화살표: 속 찬 검정 삼각 화살촉.
+         * 도선 위가 아니라 옆(수평 구간→위, 수직 구간→왼쪽)에 나란히 둔다. */
+        var isHoriz=Math.abs(ex-sx)>Math.abs(ey-sy);
         _ctx.save();
-        _ctx.translate(mx,my); _ctx.rotate(ang);
+        _ctx.translate(mx + (isHoriz?0:-ARROW_OFFSET),
+                       my + (isHoriz?-ARROW_OFFSET:0));
+        _ctx.rotate(ang);
         _ctx.beginPath();
         _ctx.moveTo(ARROW_SIZE, 0);
         _ctx.lineTo(-ARROW_SIZE*0.55, -ARROW_SIZE*0.5);
         _ctx.lineTo(-ARROW_SIZE*0.55,  ARROW_SIZE*0.5);
         _ctx.closePath();
-        _ctx.strokeStyle=App.SN.TOKENS.paper; _ctx.lineWidth=2.4; _ctx.lineJoin='round';
-        _ctx.stroke();
         _ctx.fillStyle=App.SN.TOKENS.ink;
         _ctx.fill();
         _ctx.restore();

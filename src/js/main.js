@@ -376,27 +376,36 @@ App.Main=(function(){
     _makeToggle('vis-badges','showBadges');
     _makeToggle('vis-labels','showLabels');
 
-    /* ── AC 감지 시 화살표 버튼 자동 비활성화 ── */
+    /* ── AC 감지 시 화살표 버튼 자동 비활성화 ──
+     * AC 는 방향이 계속 바뀌어 화살표가 무의미하므로 강제로 끈다.
+     * 다만 이 함수는 'solver:done' 마다 불리므로, DC 분기에서
+     * showArrows 를 건드리면 소자 값만 바꿔도 방금 켠 화살표가 꺼진다.
+     * → DC 에서는 상태를 손대지 않고 버튼 표시만 상태에 맞춘다.
+     *   AC 진입 시 사용자의 선택을 _userArrows 에 넣어 두었다가
+     *   DC 로 돌아올 때 그대로 되돌린다. */
+    var _userArrows = App.State.showArrows;   /* AC 진입 직전 사용자 선택 */
+    var _acLatched  = false;                  /* 현재 AC 때문에 꺼둔 상태인지 */
+
     function _syncArrowsForAC(){
       var sr = App.State.solverResult;
       var isAC = !!(sr && sr.acPhasor);
       var btn  = document.getElementById('vis-arrows');
       if(!btn) return;
       if(isAC){
-        App.State.showArrows = false;
-        btn.classList.remove('active');
+        if(!_acLatched){ _userArrows = App.State.showArrows; _acLatched = true; }
+        App.State.showArrows    = false;
         btn.style.opacity       = '0.25';
         btn.style.cursor        = 'not-allowed';
         btn.style.pointerEvents = 'none';
         btn.title               = 'AC 회로에서는 화살표가 표시되지 않습니다';
       } else {
+        if(_acLatched){ App.State.showArrows = _userArrows; _acLatched = false; }
         btn.style.opacity       = '';
         btn.style.cursor        = '';
         btn.style.pointerEvents = '';
         btn.title               = '전류 방향 화살표 표시/숨김';
-        App.State.showArrows = false;
-        btn.classList.remove('active');
       }
+      btn.classList.toggle('active', App.State.showArrows);
       App.EditRenderer.scheduleRender();
     }
     App.Events.on('solver:done', _syncArrowsForAC);

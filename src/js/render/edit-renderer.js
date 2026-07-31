@@ -196,6 +196,14 @@ App.EditRenderer=(function(){
     var isAC= !!(sr.acPhasor);
     var rmsK= isAC ? 1/Math.SQRT2 : 1;
     var as  = Math.max(9, Math.min(13, cellPx*0.22));
+    /* 화살표·배지를 도선에서 옆으로 빼는 거리.
+     * 검정 도선 위에 검정 화살표를 겹치면 "도선이 굵어진 곳"으로만 읽히고,
+     * 배지도 도선을 가로질러 읽기 어렵다. 지면 규격이라 색을 못 쓰므로
+     * 도선 양옆에 나눠 놓아 형태·위치로 구분한다.
+     *   화살표 → 수평 구간 위 / 수직 구간 왼쪽
+     *   배지   → 그 반대쪽                      (run-renderer 와 같은 규칙) */
+    var aoff = Math.round(as*0.7+1.5);
+    var boff = as+8;
 
     /* 가시 플래그 — AC 모드에서는 화살표 항상 숨김 */
     var doArrows = App.State.showArrows && !isAC;
@@ -219,15 +227,14 @@ App.EditRenderer=(function(){
         var mx=(sx+ex)/2, my=(sy+ey)/2;
         var ang=Math.atan2(ey-sy,ex-sx);
         if(convDir<0) ang+=Math.PI;
-        /* 수능 규격 화살표: 속 찬 검정 삼각 화살촉.
-         * 도선(검정 실선) 위에 겹치므로 흰 테두리로 살짝 띄운다. */
+        /* 수능 규격 화살표: 속 찬 검정 삼각 화살촉 — 도선 옆에 나란히 */
+        var arrHoriz=Math.abs(ex-sx)>Math.abs(ey-sy);
         ctx.save();
-        ctx.translate(mx,my); ctx.rotate(ang);
+        ctx.translate(mx+(arrHoriz?0:-aoff), my+(arrHoriz?-aoff:0));
+        ctx.rotate(ang);
         ctx.beginPath();
         ctx.moveTo(as,0); ctx.lineTo(-as*0.6,-as*0.52); ctx.lineTo(-as*0.6,as*0.52);
         ctx.closePath();
-        ctx.strokeStyle=SN.TOKENS.paper; ctx.lineWidth=2.4; ctx.lineJoin='round';
-        ctx.stroke();
         ctx.fillStyle=SN.TOKENS.ink;
         ctx.fill();
         ctx.restore();
@@ -237,29 +244,73 @@ App.EditRenderer=(function(){
     /* ══════════════════════════════════════════════════════════════
      * 패스 2 — 텍스트 배지 전부 (최상위 레이어)
      *
-     * 수능 지면 규격: 배경 상자 없이 검정 글자만 둔다. 도선 위에 겹칠 때를
-     * 대비해 흰 헤일로(외곽선)를 깔아 가독성을 확보한다.
+     * 전류 배지는 소자 특성값 라벨과 같은 검정 이탤릭이라 글자만으로는
+     * 서로 구분되지 않는다. 색을 쓸 수 없으므로 **얇은 상자 테두리**로
+     * 구분한다 (흰 속 + 1px 검정 외곽선) — 지면 규격 안에서의 형태 구분.
      *
      * drawBadge 설계 원칙:
      *   1) ctx 상태를 save/restore 로 완전 격리
      *   2) 글자 폭을 재서 화면 밖으로 잘리지 않게 위치 보정
+     *   3) side='right' 는 세로 도선 옆에 놓을 때 — 중앙 정렬하면 상자가
+     *      도선을 가로지르므로 상자 왼쪽 끝을 기준점에 맞춘다.
      * ══════════════════════════════════════════════════════════════ */
-    function drawBadge(txt, bx, by, fsz){
+    var _placed=[];   /* 이번 렌더에서 이미 놓인 배지 사각형 */
+    function _free(r){
+      return !_placed.some(function(q){
+        return !(r.x1<q.x0||r.x0>q.x1||r.y1<q.y0||r.y0>q.y1);
+      });
+    }
+    /* 소자 칸(+ 아래 특성값 라벨 자리)을 미리 점유로 등록 —
+     * 배지가 심볼이나 특성값을 덮어버리지 않게 한다. */
+    App.State.components.forEach(function(comp){
+      var g=App.Geo.gridToPixel(comp.gridX,comp.gridY);
+      _placed.push({x0:g.x, x1:g.x+cellPx,
+                    y0:g.y, y1:g.y+cellPx+(App.State.showLabels?cellPx*0.3:0)});
+    });
+
+    function drawBadge(txt, bx, by, fsz, side){
       ctx.save();
       ctx.globalAlpha=1; ctx.setLineDash([]);
 
       ctx.font='italic '+fsz+'px '+SN.TOKENS.font;
-      var tw=ctx.measureText(txt).width+6;
-      var bh=fsz+4;
+      var tw=ctx.measureText(txt).width+10;
+      var bh=fsz+7;
+
+      if(side==='right') bx+=tw/2;
+      else if(side==='left') bx-=tw/2;
 
       /* 경계 클리핑 방지 */
       if(bx-tw/2 <  2) bx=tw/2+2;
       if(bx+tw/2 > W-2) bx=W-tw/2-2;
       if(by-bh/2 <  2) by=bh/2+2;
       if(by+bh/2 > H-2) by=H-bh/2-2;
+
+      /* 이미 놓인 배지와 겹치면 위아래로 한 칸씩 비켜 자리를 찾는다.
+       * 색으로 구분할 수 없는 지면 규격에서는 배지끼리 겹치는 순간
+       * 둘 다 못 읽게 되므로, 겹침 회피가 가독성의 마지막 보루다. */
+      var rect={x0:bx-tw/2,x1:bx+tw/2,y0:by-bh/2,y1:by+bh/2};
+      if(!_free(rect)){
+        var by0=by, step=bh+3, tries=[1,-1,2,-2,3,-3];
+        for(var a=0;a<tries.length;a++){
+          var cy=by0+tries[a]*step;
+          if(cy-bh/2<2||cy+bh/2>H-2) continue;
+          var cand={x0:bx-tw/2,x1:bx+tw/2,y0:cy-bh/2,y1:cy+bh/2};
+          if(_free(cand)){ by=cy; rect=cand; break; }
+        }
+      }
+      _placed.push(rect);
+
+      ctx.beginPath();
+      if(ctx.roundRect) ctx.roundRect(bx-tw/2,by-bh/2,tw,bh,3);
+      else ctx.rect(bx-tw/2,by-bh/2,tw,bh);
+      ctx.fillStyle=SN.TOKENS.paper;
+      ctx.fill();
+      ctx.strokeStyle=SN.TOKENS.ink;
+      ctx.lineWidth=SN.TOKENS.lwThin;
+      ctx.stroke();
       ctx.restore();
 
-      App.SN.label(ctx,txt,bx,by,fsz,{italic:true,halo:3.5});
+      App.SN.label(ctx,txt,bx,by,fsz,{italic:true});
     }
 
     /* ── 도선 배지 ── */
@@ -276,22 +327,26 @@ App.EditRenderer=(function(){
         var len=Math.hypot(ex-sx,ey-sy);
         if(len<44) continue;
         var mx=(sx+ex)/2, my=(sy+ey)/2;
+        /* 배지는 화살표 반대쪽에 둔다 — 같은 쪽이면 둘이 겹쳐 읽기 어렵다 */
         var isHoriz=Math.abs(ex-sx)>Math.abs(ey-sy);
-        var offset=as+12;
-        var bx2=mx, by2=my;
-        if(isHoriz){
-          by2=my-offset;
-          if(by2-(Math.max(9,Math.min(11,cellPx*0.20))+8)/2<2) by2=my+offset;
-        } else {
-          bx2=mx-offset;
-        }
+        var bx2=mx, by2=my, side=null;
+        if(isHoriz) by2=my+boff;
+        else { bx2=mx+boff; side='right'; }
         var fsz2=Math.max(SN.FS.badgeMin,Math.min(11,cellPx*0.20));
         var Idisp=Ipeak*rmsK;
-        drawBadge(_fmtCurrentShort(Math.abs(Idisp))+(isAC?' rms':''),bx2,by2,fsz2);
+        drawBadge(_fmtCurrentShort(Math.abs(Idisp))+(isAC?' rms':''),bx2,by2,fsz2,side);
       }
     });
 
     /* ── 부품 배지 ── */
+    /* 회로 중심 x — 배지를 회로 바깥쪽으로 밀어내는 기준 */
+    var cxMean=0;
+    if(App.State.components.length){
+      App.State.components.forEach(function(c){
+        cxMean+=App.Geo.gridToPixel(c.gridX,c.gridY).x+cellPx/2;
+      });
+      cxMean/=App.State.components.length;
+    }
     if(doBadges)
     App.State.components.forEach(function(comp){
       if(comp.type===TYPE.JUNCTION_3||comp.type===TYPE.JUNCTION_4) return;
@@ -300,10 +355,20 @@ App.EditRenderer=(function(){
       var gp=App.Geo.gridToPixel(comp.gridX,comp.gridY);
       if(gp.x+cellPx<-5||gp.x>W+5||gp.y+cellPx<-5||gp.y>H+5) return;
       var fsz=Math.max(10,Math.min(SN.FS.badgeMax,cellPx*0.22));
-      var by=gp.y-cellPx*0.15;
-      if(by-(fsz+8)/2<2) by=gp.y+cellPx*0.15+(fsz+8);
       var Idisp=Math.abs(Ipeak)*rmsK;
-      drawBadge(_fmtCurrentShort(Idisp)+(isAC?' rms':''),gp.x+cellPx/2,by,fsz);
+      var txt=_fmtCurrentShort(Idisp)+(isAC?' rms':'');
+      /* 배지를 소자의 **단자 축과 수직인 쪽**에 둔다.
+       * 세로 소자(rotation 90/270)는 위아래로 도선이 나가므로 위에 두면
+       * 상자가 도선을 덮는다 → 옆으로 뺀다. 가로 소자는 반대.
+       * 좌우 중 어느 쪽이냐는 회로 중심의 반대편(=바깥)으로 정한다.
+       * 안쪽에 두면 도선 배지와 자리가 겹친다. */
+      if(comp.rotation%180!==0){
+        var outLeft=(gp.x+cellPx/2) < cxMean;
+        drawBadge(txt, outLeft?gp.x-4:gp.x+cellPx+4, gp.y+cellPx/2, fsz,
+                  outLeft?'left':'right');
+      } else {
+        drawBadge(txt, gp.x+cellPx/2, gp.y-(fsz+7)/2-4, fsz);
+      }
     });
 
     ctx.restore(); /* 외부 restore */
