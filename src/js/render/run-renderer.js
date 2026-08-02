@@ -62,9 +62,7 @@ App.RunRenderer=(function(){
    * ─────────────────────────────────────────────────────────────── */
   function _updatePoolsAC(t, sr){
     var phasor = sr.acPhasor;
-    var omega  = phasor.omega;
     var jT     = {JUNCTION_3:1, JUNCTION_4:1};
-    var ct = Math.cos(omega*t), st = Math.sin(omega*t);
 
     /* AC 순시 전류 계산 — 먼저 최대값 파악 */
     var wireInstI = {};  /* wire.id → 순시 전류 */
@@ -78,8 +76,9 @@ App.RunRenderer=(function(){
       var instI = 0;
       function getInstFromComp(comp, portId, isFrom){
         if(!comp||jT[comp.type]) return false;
-        var p = phasor.compI[comp.id]; if(!p) return false;
-        var raw = p.re*ct - p.im*st;
+        if(!phasor.compI[comp.id]) return false;
+        /* 순시 전류 — 혼합 회로의 DC 오프셋 포함 (solver 의 단일 구현 사용) */
+        var raw = phasor.instCurrent(comp.id, t);
         var ports = App.Geo.getCompPorts(comp);
         var idx   = ports.indexOf(portId);
         instI = isFrom ? (idx===0?-1:1)*raw : (idx===0?1:-1)*raw;

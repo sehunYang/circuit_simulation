@@ -20,8 +20,9 @@
 | --- | --- |
 | 회로 편집 | 사이드바에서 소자를 드래그해 격자에 배치. 인접 포트는 자동으로 연결됨 |
 | 지원 소자 | DC 전원, AC 전원, 저항(R), 커패시터(C), 인덕터(L), 3분기점, 4분기점 |
-| DC 해석 | 실수 MNA. 인덕터=단락, 커패시터=개방 |
+| DC 해석 | 통합 복소 MNA (ω=0 패스). 인덕터=단락, 커패시터=개방 |
 | AC 해석 | 복소 페이저 MNA. 임피던스 `jωL`, `1/(jωC)` 반영 |
+| 혼합 해석 | DC+AC 공존 시 중첩의 원리 — `i(t)=I_dc+Re[I_ac·e^(jωt)]`, 표시값=피크 |
 | 실행 모드 | 전류 방향의 반대로 전자가 흐르는 파티클 애니메이션 (전류 크기 ∝ 속도·밀도) |
 | 비유 모드 | Three.js + Cannon-es 물리 엔진으로 회로를 **수로(水路)** 에 비유해 3D 시각화 |
 | 과도 응답 | RC·RL·RLC 과도 응답 그래프 (KaTeX 수식 레이블 포함) |
@@ -70,6 +71,17 @@ npx serve .
 - [KaTeX 0.16.9](https://katex.org/) — 과도 응답 그래프의 수식 레이블
 - [Three.js r128](https://threejs.org/) — 비유 모드 3D 렌더링
 - [Cannon-es 0.20.0](https://pmndrs.github.io/cannon-es/) — 비유 모드 물리 시뮬레이션 (선택적)
+
+### 물리 검증 테스트
+
+```bash
+node tests/run-tests.js
+```
+
+솔버·토폴로지·과도응답을 브라우저 없이(Node vm) 로드해, 해석해(옴 법칙·복소
+임피던스·KCL/KVL·전력 보존·`τ=L/R`,`RC`·RLC 감쇠진동 `α=R/2L`,`ω_d`)와 수치
+대조하는 30개 시나리오(140+ 검증)를 실행합니다. 기대값은 솔버와 무관한 닫힌형
+공식으로만 작성되어 있습니다.
 
 ---
 
@@ -121,7 +133,7 @@ circuit_simulation/
         │   └── geo.js             # App.Geo — 좌표 변환 · 포트 위치 · 도선 경로
         ├── circuit/
         │   ├── topology.js        # App.Topology — Union-Find 노드 병합
-        │   └── solver.js          # App.Solver — MNA 회로 해석 (DC 실수 / AC 복소)
+        │   └── solver.js          # App.Solver — 통합 복소 MNA 해석 (DC·AC·혼합 중첩)
         ├── render/
         │   ├── svg-shapes.js      # App.SN — 수능 지면 규격 토큰 + Canvas2D→SVG 기록기
         │   ├── symbols.js         # App.Symbols — 소자 심볼 드로잉 (Canvas / Recorder 공용)
@@ -218,14 +230,16 @@ App.State 변경  ──emit──►  'state:changed'
 
 ### 회로 해석 파이프라인
 
-1. **`Topology.build(comps, wires, Geo)`**
+1. **`Topology.build(comps, wires)`**
    `(소자, 포트)` 쌍마다 슬롯을 부여하고, 도선으로 이어진 슬롯을 Union-Find 로 병합해
-   전기적으로 동일한 노드에 같은 번호를 부여합니다.
-   결과: `{ nodeCount, groundNode, compNodes, portNode, hasAC }`
-2. **`Solver.run()`**
-   토폴로지 결과로 MNA 행렬을 세워 노드 전위를 구합니다.
-   - **DC**: 실수 행렬. 인덕터는 단락(`SMALL_R`), 커패시터는 개방
-   - **AC**: 복소 페이저 행렬. `jωL`, `1/(jωC)` 반영
+   전기적으로 동일한 노드에 같은 번호를 부여합니다 (접지=전원 음극 노드를 0으로 선지정).
+   결과: `{ nodeCount, groundNode, compNodes, portNode, hasAC, hasDC }`
+2. **`Solver.solve(comps, wires)`** (순수 함수 — `run()` 은 이를 디바운스 호출)
+   단일 복소 MNA 코어로 최대 두 패스를 풉니다.
+   - **DC 패스 (ω=0)**: 인덕터=단락(`SMALL_R`), 커패시터=개방, AC 전원=0V(이상 전원=단락)
+   - **AC 패스 (ω>0)**: `Y_L=−j/ωL`, `Y_C=jωC`, DC 전원=0V
+   - **혼합**: 두 패스를 중첩 — 표시값은 피크 `|I_dc|+|I_ac|`, 순시값은 `acPhasor.instCurrent()`
+   - 도선 전류는 정션 KCL 필링(비결정 병렬 이상도체는 균등 분배)으로 결정적으로 계산
    결과는 `App.State.solverResult` 에 저장되고 `solver:done` 이 발행됩니다.
 
 ```js

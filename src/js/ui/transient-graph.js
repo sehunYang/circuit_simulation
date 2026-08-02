@@ -1222,15 +1222,18 @@ App.TransientGraph=(function(){
     });
   }
 
-  /* ── 비유 모드 재사용: 과도응답 핏 데이터 계산/반환 ──
-   *   반환: { byId:{compId:{amp,tau,isRising}}, domTau:지배시상수 }
+  /* ── 비유 모드·테스트 재사용: 과도응답 데이터 계산/반환 ──
+   *   반환: { byId:{compId:{amp,tau,isRising}}, domTau:지배시상수,
+   *           branchModel, curves:{compId:Float32Array}, poles:{alpha,omegad,isOsc},
+   *           tMax:곡선 시간축 최대(s) }
    *   동적 소자(L/C)가 없으면 null. 패널 표시 여부와 무관하게 계산. */
   function getTransientData(){
     var params=_extractParams();
     if(!params) return null;
     var savedTMax=_tMax, savedPoles=_systemPoles;
-    _computeTransient(params);   /* _fitData, _domTau, _branchModel 갱신 (부수효과로 _tMax 변경) */
-    var data={ byId:_fitData, domTau:_domTau, branchModel:_branchModel };
+    var curves=_computeTransient(params);   /* _fitData, _domTau, _branchModel 갱신 (부수효과로 _tMax 변경) */
+    var data={ byId:_fitData, domTau:_domTau, branchModel:_branchModel,
+               curves:curves, poles:_systemPoles, tMax:_tMax };
     /* 패널이 실행 중이 아니면 _tMax 등 원복 (그래프 상태 보호) */
     if(!_running){ _tMax=savedTMax; _systemPoles=savedPoles; }
     return data;
