@@ -1057,6 +1057,22 @@ async function main(){
     approx('마지막 1/4 구간 최대 오차 < 1%', maxErr/scale, 0, 0, 0.01);
   })();
 
+  /* ── NL-4: 레일 라벨 → 스위치 → 저항 → 접지 사슬의 도선 전류 —
+   *   라벨은 KCL 노드가 아니다 (같은 이름끼리 도선 없이 이어짐). 예전엔
+   *   라벨에 붙은 도선이 '잔차 0' 으로 0 A 가 됐다. ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('DC_SOURCE',12), L0=c.add('LABEL',0), G0=c.add('GROUND',0); L0.label='VCC';
+    c.wire(L0,'B',V,'L'); c.wire(V,'R',G0,'T');
+    var L1=c.add('LABEL',0), SW=c.add('SWITCH',0), R=c.add('RESISTOR',100), G1=c.add('GROUND',0); L1.label='VCC';
+    var w1=c.wire(L1,'B',SW,'L'), w2=c.wire(SW,'R',R,'L'), w3=c.wire(R,'R',G1,'T');
+    var sr=await solveCircuit(sb,c);
+    scenario('NL-4 라벨→스위치→저항→접지: 모든 도선 전류 = 120mA (라벨은 KCL 노드가 아님)');
+    check('유효', sr.valid, sr.error);
+    [w1,w2,w3].forEach(function(w){ approx('도선 '+w.id+' = 0.12', Math.abs(sr.wireCurrents[w.id]), 0.12, 1e-6); });
+    approx('스위치 전류 0.12', Math.abs(sr.branchCurrents[SW.id]), 0.12, 1e-6);
+  })();
+
   /* ════════════ 결과 출력 ════════════ */
   var totalChecks=0, totalFail=0, failScen=0;
   console.log('');

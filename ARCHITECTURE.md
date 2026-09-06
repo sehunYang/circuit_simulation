@@ -2,6 +2,7 @@
 
 > 이 문서는 **코드를 고치려는 사람**을 위한 것입니다.
 > 수업에서 쓰는 방법은 [README.md](README.md) 를 보세요.
+> 엔진 v2 의 설계 배경과 로드맵은 설계서(회로 엔진 v2 설계서, 세션 아티팩트)에 있습니다.
 
 빌드 도구·패키지 매니저·트랜스파일러가 없는 **순수 정적 웹앱**입니다.
 `index.html` 이 CSS·JS 를 순서대로 불러오고, 각 JS 파일은 IIFE 로 감싸져
@@ -33,10 +34,11 @@ npx serve .
 node tests/run-tests.js
 ```
 
-솔버·토폴로지·과도응답을 브라우저 없이(Node vm) 로드해, 해석해(옴 법칙·복소
-임피던스·KCL/KVL·전력 보존·`τ=L/R`,`RC`·RLC 부족/임계/과감쇠 `α=R/2L`,`ω_d`)와
-수치 대조하는 36개 시나리오(174 검증)를 실행합니다. 기대값은 솔버와 무관한 닫힌형
-공식으로만 작성되어 있습니다. **솔버를 고쳤다면 반드시 실행하세요.**
+회로 해석 엔진 전체를 브라우저 없이(Node vm) 로드해, 해석해(옴 법칙·복소 임피던스·
+KCL/KVL·전력 보존·RC/RL 시상수·RLC 부족/임계/과감쇠 극점·다이오드 Shockley·BJT 세 동작
+영역·RTL/DL 논리 게이트 진리표·반파 정류 평균·혼합 DC+AC 시간 영역 = 페이저)와
+수치 대조하는 **49개 시나리오(260 검증)** 를 실행합니다. 기대값은 솔버와 무관한
+닫힌형 공식으로만 작성되어 있습니다. **엔진을 고쳤다면 반드시 실행하세요.**
 
 ### 화면 표시 검증 (헤드리스 Chrome)
 
@@ -46,10 +48,12 @@ python -m http.server 8123            # 다른 터미널
 node tests/browser/run.js
 ```
 
-실제 페이지를 띄워 **사용자에게 보이는 값**을 검증합니다 — 속성 패널의
-전류·전압·전력·`Q=CV`·`Φ=LI`·AC 피크/실효값/임피던스/유효전력·혼합(DC+AC) 실효값,
-실행 모드의 전자 이동 방향(관례 전류의 반대)과 입자 밀도(전류 비례),
-비유 모드 HUD 의 τ. 렌더러·패널을 고쳤다면 이것도 실행하세요.
+실제 페이지를 띄워 **사용자에게 보이는 값**을 검증합니다 (**73건**) — 속성 패널의
+전류·전압·전력·`Q=CV`·`Φ=LI`·AC 피크/실효값/임피던스/유효전력·혼합 실효값, 실행 모드의
+전자 이동 방향(관례 전류의 반대)과 밀도·과도 재생, 자동 스위치와 '열림/닫으면' 두 열,
+회로이론 표기, 그룹 선택 팝업, 전구 광량, 다이오드·BJT 패널, 오실로스코프, 그래프
+시간 커서, 비유 HUD τ, POE 예제 8종과 진리표, 공유 링크 왕복, 전위 지형, 전하 카운터,
+실행 모드 스위치 토글. 렌더러·패널을 고쳤다면 이것도 실행하세요.
 (`CHROME_PATH`, `APP_URL` 환경변수로 크롬 경로·주소 변경 가능)
 
 ---
@@ -64,235 +68,188 @@ circuit_simulation/
 ├── Design_Suneung_Comparison.md   # 수능 지면 규격 대조표
 ├── docs/images/                   # README 스크린샷
 ├── tests/run-tests.js             # 물리 검증 (Node, 브라우저 불필요)
+├── tests/browser/                 # 화면 표시 검증 (puppeteer-core)
 └── src/
-    ├── styles/                    # CSS — 링크 순서 = 캐스케이드 순서
-    │   ├── tokens.css             # 디자인 토큰 (CSS Custom Properties)
-    │   ├── base.css               # 리셋 & 기본 레이아웃
-    │   ├── sidebar.css            # 사이드바 (소자 팔레트)
-    │   ├── canvas.css             # 캔버스 3레이어 · 드래그 고스트 · 삭제존
-    │   ├── mode-bar.css           # 모드 바 (편집/실행/비유/촬영)
-    │   ├── toolbar.css            # Undo/Redo · 표시 토글 바
-    │   ├── prop-panel.css         # 속성 패널
-    │   ├── transient-panel.css    # 과도 응답 그래프 패널
-    │   ├── val-popup.css          # 값 입력 팝업
-    │   ├── context-menu.css       # 우클릭 컨텍스트 메뉴
-    │   ├── overlays.css           # 토스트 · 연결 힌트 · 정보 오버레이
-    │   └── responsive.css         # 반응형 (⚠️ 반드시 마지막에 로드)
+    ├── styles/                    # CSS — 링크 순서 = 캐스케이드 순서 (responsive 가 마지막)
     └── js/
         ├── core/
-        │   ├── constants.js       # 전역 상수 · 소자 정의 테이블 (유일한 전역 노출)
+        │   ├── constants.js       # TYPE·NODE_TYPES·NONLINEAR_TYPES·SIDEBAR_ITEMS(그룹)·COMP_PORTS
         │   ├── namespace.js       # window.App = {}
         │   ├── events.js          # App.Events — 경량 이벤트 버스
-        │   └── state.js           # App.State — 단일 상태 저장소 + Undo/Redo
-        ├── geometry/
-        │   └── geo.js             # App.Geo — 좌표 변환 · 포트 위치 · 도선 경로
-        ├── circuit/
-        │   ├── topology.js        # App.Topology — Union-Find 노드 병합
-        │   └── solver.js          # App.Solver — 통합 복소 MNA 해석 (DC·AC·혼합 중첩)
+        │   ├── state.js           # App.State — 단일 상태 저장소 + Undo/Redo (자동 스위치 삭제 규칙)
+        │   └── share.js           # App.Share — 회로 ↔ URL 해시 (#c=…)
+        ├── geometry/geo.js        # App.Geo — 좌표 변환 · 포트 위치 · 도선 경로
+        ├── circuit/               # ★ 회로 해석 엔진 v2 (아래 절)
+        │   ├── netlist.js         # 그림 → 회로망 (노드 병합·스위치·접지·레일·섬)
+        │   ├── mna.js             # MNA 행렬 코어 (실수·복소 가우스 소거)
+        │   ├── devices/           # 소자 스탬프: index(레지스트리)·resistor·capacitor·inductor
+        │   │                      #   ·vsource·bulb·diode·bjt
+        │   ├── analysis/          # op(동작점, NR) · ac(소신호) · tran(시간 영역) · poles(극점)
+        │   ├── post/              # wires(도선 전류 KCL 필링) · result(뷰·파형·표시 규약)
+        │   └── solver.js          # 오케스트레이터 (열림/닫힘 두 상태, 파형 여부·구간 결정)
         ├── render/
         │   ├── svg-shapes.js      # App.SN — 수능 지면 규격 토큰 + Canvas2D→SVG 기록기
-        │   ├── symbols.js         # App.Symbols — 소자 심볼 드로잉 (Canvas / Recorder 공용)
-        │   ├── grid-renderer.js   # App.GridRenderer — 격자 배경 (canvas-bg)
-        │   ├── edit-renderer.js   # App.EditRenderer — 편집 모드 (canvas-main)
-        │   ├── run-renderer.js    # App.RunRenderer — 전자 이동 애니메이션 (canvas-anim)
-        │   ├── analogy-renderer.js# App.AnalogyRenderer — 수로 비유 3D
-        │   └── capture.js         # App.Capture — 선화 내보내기 (촬영 PNG · SVG 직렬화 겸용)
+        │   ├── symbols.js         # 소자 심볼 (스위치 열림/닫힘·접지·라벨·전구·다이오드·BJT 포함)
+        │   ├── grid-renderer.js   # 격자 배경
+        │   ├── edit-renderer.js   # 편집 모드 (전구 광량·전위 지형·전후 비교 배지)
+        │   ├── run-renderer.js    # 전자 애니메이션 (파형 재생·전하 카운터)
+        │   ├── analogy-renderer.js# 수로 비유 3D (파형 표본화)
+        │   └── capture.js         # 선화 내보내기 (촬영 PNG)
         ├── ui/
-        │   ├── interaction.js     # App.Interaction — 포인터 제스처 FSM · 키보드
-        │   ├── transient-graph.js # App.TransientGraph — 과도 응답 그래프
-        │   ├── val-popup.js       # App.ValPopup — 값 입력 팝업
-        │   ├── prop-panel.js      # App.PropPanel — 속성 패널
-        │   └── toast.js           # window.showErrorToast — 전역 에러 토스트
-        └── main.js                # App.Main — 부트스트랩 & 모드 오케스트레이션
+        │   ├── interaction.js     # 포인터 제스처 · 키보드 · 실행 모드 스위치 토글
+        │   ├── transient-graph.js # 과도 응답 그래프 (엔진 파형·극점 위의 뷰 + 시간 커서)
+        │   ├── scope.js           # 오실로스코프 (교류·정류·비선형 v(t)·i(t))
+        │   ├── poe.js             # 예측·관찰·설명 활동, 진리표, 결과 CSV
+        │   ├── val-popup.js       # 값 입력 팝업
+        │   ├── prop-panel.js      # 속성 패널 (열림/닫으면 두 열, 파형 통계)
+        │   └── toast.js           # 전역 토스트
+        └── main.js                # 부트스트랩 · 모드 FSM · 사이드바(그룹 선택) · 자동 스위치
 ```
 
 ---
 
-## 모듈 구조
+## 회로 해석 엔진 v2
 
-### 모듈 시스템
+### 흐름
 
-번들러 없이 **클래식 `<script>` 태그**로 순차 로드합니다. 각 파일은 IIFE 로 감싸져
-전역을 오염시키지 않으며, 공개 API 만 `window.App.<모듈명>` 에 등록합니다.
+```
+그림 (comps · wires · 라벨)
+   │  netlist.build(comps, wires, {closed})
+   ▼
+Netlist  { nodeCount, compNodes, portNode, passthrough(닫힌 스위치), islands, warnings }
+   │  Devices.createAll(nl)  → 소자 객체 (스탬프 인터페이스)
+   ▼
+analysis/op  ──► x (동작점)            선형: 1회, 비선형: Newton-Raphson
+analysis/ac  ──► 페이저 (AC 전원 있을 때, 동작점 주위 소신호)
+analysis/poles ► 극점 (선형·동적 소자 있을 때)  τ·α·ω_d 정확값
+analysis/tran ─► 파형 (동적 소자 또는 비선형+AC — 닫힘 상태에서만)
+   │  post/wires (도선 전류 KCL 필링) · post/result (뷰 조립)
+   ▼
+Result = 뷰 + { open, closed, hasSwitches, switchesClosed }
+```
+
+`App.Solver.solve(comps, wires, opts)` 는 순수 함수입니다 (테스트가 그대로 호출).
+`opts.closed` 가 최상위 뷰의 상태를, `opts.noWave` 가 파형 생략을 정합니다.
+앱에서는 `solveNow()` 가 **편집 모드 = 열림, 실행·비유 모드 = 닫힘**으로 고릅니다.
+
+### Netlist 병합 규칙
+
+1. 도선으로 이어진 포트끼리   2. 분기점(J3·J4)의 모든 포트
+3. 접지(GROUND) 전부 → 노드 0   4. 같은 이름의 레일 라벨(LABEL)끼리
+5. 스위치: `closed && comp.on !== false` 이면 양 포트 병합 (`passthrough`)
+
+기준 노드는 접지가 있으면 접지, 없으면 마지막 전원의 음극입니다.
+열린 회로는 오류가 아닙니다 — 전원과 이어지지 않은 섬, 짝 없는 라벨은 `warnings`.
+오류는 물리적으로 해가 없는 경우뿐: `전원이 없습니다`, `단락 회로가 감지되었습니다`,
+`서로 다른 전압의 전원이 병렬…`, `주파수가 서로 다른 교류 전원…`, `해가 수렴하지 않습니다`.
+
+### 소자 인터페이스 (`devices/index.js`)
 
 ```js
-(function(){
-'use strict';
-var App = window.App;
-
-App.MyModule = (function(){
-  var _private = 1;                 // 외부에서 접근 불가
-  function doThing(){ /* ... */ }
-  return { doThing: doThing };      // 공개 API
-})();
-
-}());
-```
-
-예외는 `core/constants.js` 하나뿐으로, `TYPE`·`CELL_SIZE`·`SIDEBAR_ITEMS` 등
-튜닝 상수를 의도적으로 전역에 노출합니다.
-
-> ⚠️ **로드 순서를 바꾸지 마세요.** `index.html` 의 `<script>` 나열 순서가 곧
-> `App.*` 등록 순서입니다. 예를 들어 `state.js` 가 `events.js` 보다 먼저 실행되면
-> 초기화 시점에 `App.Events` 가 없습니다.
-
-### 의존 계층
-
-```
-        core/constants.js  (전역 상수)
-                 │
-        core/namespace.js  (window.App)
-                 │
-   ┌─────────────┴──────────────┐
-core/events.js            core/state.js ──── geometry/geo.js
-   │                             │                  │
-   │              ┌──────────────┴──────────────┐   │
-   │        circuit/topology.js ──────► circuit/solver.js
-   │                                            │
-   ├──► render/*   (Symbols · Grid · Edit · Run · Analogy)
-   ├──► ui/*       (Interaction · TransientGraph · ValPopup · PropPanel · toast)
-   └──► main.js    (부트스트랩 · 모드 FSM · 이벤트 배선)
-```
-
-### 이벤트 흐름
-
-모듈 간 직접 호출 대신 `App.Events` 버스를 통해 느슨하게 결합합니다.
-
-```
-사용자 입력 (Interaction)
-        │
-        ▼
-App.State 변경  ──emit──►  'state:changed'
-                                │
-                                ├─► App.Solver.run()   (requestIdleCallback 디바운스)
-                                │        │
-                                │        └──emit──► 'solver:done'
-                                │                        │
-                                │                        ├─► App.PropPanel.refresh()
-                                │                        ├─► App.EditRenderer.scheduleRender()
-                                │                        └─► App.RunRenderer / TransientGraph
-                                └─► App.EditRenderer.scheduleRender()
-
-뷰포트 변경 (팬·줌) ──emit──► 'viewport:changed' ──► GridRenderer.render()
-```
-
-| 토픽 | 발행 시점 |
-| --- | --- |
-| `state:changed` | 소자·도선 추가/삭제/이동/값 변경, Undo/Redo |
-| `solver:done` | MNA 해석 완료 (성공·실패 모두) |
-| `viewport:changed` | 팬·줌으로 `viewTransform` 이 바뀜 |
-| `component:placed` | 사이드바에서 새 소자 배치 완료 — 모바일 사이드바 자동 닫힘 |
-
-### 회로 해석 파이프라인
-
-1. **`Topology.build(comps, wires)`**
-   `(소자, 포트)` 쌍마다 슬롯을 부여하고, 도선으로 이어진 슬롯을 Union-Find 로 병합해
-   전기적으로 동일한 노드에 같은 번호를 부여합니다 (접지=전원 음극 노드를 0으로 선지정).
-   결과: `{ nodeCount, groundNode, compNodes, portNode, hasAC, hasDC }`
-2. **`Solver.solve(comps, wires)`** (순수 함수 — `run()` 은 이를 디바운스 호출)
-   단일 복소 MNA 코어로 최대 두 패스를 풉니다.
-   - **DC 패스 (ω=0)**: 인덕터=단락(`SMALL_R`), 커패시터=개방, AC 전원=0V(이상 전원=단락)
-   - **AC 패스 (ω>0)**: `Y_L=−j/ωL`, `Y_C=jωC`, DC 전원=0V
-   - **혼합**: 두 패스를 중첩 — 표시값은 피크 `|I_dc|+|I_ac|`, 순시값은 `acPhasor.instCurrent()`
-   - 도선 전류는 정션 KCL 필링(비결정 병렬 이상도체는 균등 분배)으로 결정적으로 계산
-   결과는 `App.State.solverResult` 에 저장되고 `solver:done` 이 발행됩니다.
-
-```js
-// solverResult 구조
-{
-  nodeVoltages:      { 0: 0, 1: 12, 2: 9.209302 },
-  portVoltages:      { compId: { L: …, R: … } },
-  componentVoltages: { compId: … },
-  branchCurrents:    { compId: … },
-  valid: true,
-  error: null
+Device = {
+  id, type, comp, nodes:[nA,nB,(nC)], i0, i1, i2,   // 미지수 인덱스 (접지 = -1)
+  extra: 0|1, k,                                    // 보조 미지수 (전원·인덕터 가지전류)
+  linear, dynamic, disabled,
+  loadOP  (sys, x, ctx)          // 동작점 — 현재 반복해 x 에서 선형화해 누적
+  loadAC  (sys, xOP, ω, ctx)     // 소신호 어드미턴스 (복소 sys)
+  loadTran(sys, x, ctx)          // 동반 모델 (ctx: t, h, method 'BE'|'TR', init)
+  tranInit(x0) · tranUpdate(x, ctx) → outputs
+  outputs(x) → {v, i, …extra}    // ports[0]→ports[1] 방향 +   (P, brightness, region, iB/iC/iE …)
+  portCurrents(x) / portCurrentsOut(o) → {portId: 유입 전류}   // BJT 는 단자마다 다르다
+  reset()                        // 접합 전압 제한 이력 초기화
 }
 ```
 
-### 캔버스 레이어
+새 소자 = `devices/` 파일 하나 + `symbols.js` 심볼 + `prop-panel.js` 필드/행 +
+`constants.js` 의 TYPE·COMP_PORTS·SIDEBAR_ITEMS. 해석 코드는 손대지 않습니다.
+스위치·접지·레일 라벨·분기점은 스탬프가 없고(`create` 가 null), 병합은 Netlist 가,
+전류는 도선 후처리가 맡습니다.
 
-| 레이어 | z-index | 담당 모듈 | 갱신 시점 |
-| --- | --- | --- | --- |
-| `#canvas-bg` | 1 | `GridRenderer` | 뷰포트 변화 시에만 |
-| `#canvas-main` | 2 | `EditRenderer` / `AnalogyRenderer` | rAF 디바운스 |
-| `#canvas-anim` | 3 | `RunRenderer` | 실행 모드에서 매 프레임 |
+### 비선형 (Newton-Raphson)
 
-### 좌표계
+`analysis/op.newton` — 선형 회로는 한 번, 비선형이면 반복. 수렴 조건은 |Δx| 와
+**접합 전압 제한(`pnjlim`)이 걸린 소자가 없을 것** 둘 다입니다. x 만 비교하면
+'제한된 점'에서 선형화한 결과가 x 를 바꾸지 않아 거짓 수렴이 납니다(베이스 5 V,
+전류 10⁶ A). 특이행렬 폴백: 그대로 → 모든 노드 gmin 1e-9 S → 전원 직렬저항 1e-4 Ω.
 
-| 좌표계 | 설명 |
-| --- | --- |
-| `grid` | 논리 좌표 (정수 칸). 소자 위치·인접 판정 기준 |
-| `pixel` | 화면 좌표. `pixel = grid × CELL_SIZE × scale + offset` |
+- 다이오드: Shockley `I = I_s(e^{V/nV_T} − 1)`, I_s = 1e-12, n = 1, gmin 병렬
+- BJT: Ebers-Moll 수송 모델, β_F = value, β_R = 1, I_s = 1e-14. 동작 영역:
+  차단(V_BE < 0.5) · 포화(V_BC > 0.4) · 활성
 
-포트 방향 벡터는 `rotation = 0` 로컬 기준으로 `L`(좌) `R`(우) `T`(상) `B`(하) 입니다.
+### 시간 영역 (`analysis/tran`)
 
-> ⚠️ 포트 이름은 **단자 식별자**이며 회전해도 바뀌지 않습니다. 회전은
-> `Geo.getPortPixel()` 이 `rotation` 을 읽어 시각적 위치만 바꿉니다.
-> 도선의 `fromPort`/`toPort` 를 회전에 맞춰 고치면 토폴로지가 깨집니다.
+t = 0 에 스위치가 닫힙니다: 축전기 단락·인덕터 개방으로 t=0⁺ 해를 구하고 고정
+스텝으로 적분합니다. 처음 두 스텝 후진 오일러, 그 뒤 사다리꼴, 매 스텝 NR.
+AC 전원은 `V·cos(ωt)`. 구간 T = 5·τ_max (진동이면 ≥ 3 주기, AC 면 ≥ 4 주기),
+스텝 = T/(τ_min/25) (1500~8000). 편집 모드에서는 파형을 만들지 않습니다
+(비선형+AC 는 패널 표시를 위해 예외).
 
-### 상태 변경 규약
+### 극점 (`analysis/poles`)
 
-`App.State` 는 유일한 진실 공급원(single source of truth)입니다.
-직접 필드를 건드리지 말고 반드시 메서드를 사용하세요.
+상태(v_C, i_L)를 하나씩 1 로 두고 전원을 0 으로 한 저항 회로망 응답으로 상태행렬
+A 를 만들고, Faddeev–LeVerrier 특성다항식 → Durand–Kerner 근. RLC 의 α, ω_d 와
+과감쇠의 두 시상수가 추정값이 아니라 고유값입니다.
+
+### 뷰와 표시 규약 (`post/result`)
+
+뷰 = `{ valid, error, warnings, nodeVoltages, portVoltages, componentVoltages,
+branchCurrents, wireCurrents, wireSignedI, componentNodes, acPhasor, dc:{compI, compV,
+out, portI, nodeV}, wave, poles }`. AC 표시값은 피크 `|I_dc| + |I_ac|`,
+실효값은 `√(I_dc² + |I_ac|²/2)`, 평균전력은 `V_dc·I_dc + Re(V·I*)/2`
+(`App.Post.display/displayV/avgPower`). 파형이 있으면 `App.Post.waveStats` 가
+정상상태 마지막 주기의 peak·rms·avg 를 주고 패널은 그것을 우선합니다(정류처럼
+페이저가 무의미한 경우 포함).
+
+`wave = { t, tMax, steps, node, elem{i, v, out}, wire, sample(id,t), sampleWire(wid,t),
+sampleNode(k,t) }`. 소비자: 과도 응답 그래프(그리기만), 오실로스코프, 실행 모드
+(전자 = `sampleWire`), 비유 모드(소자·도선·노드 모델에 파형 키를 달아 표본화).
+
+---
+
+## 상태 변경 규약
+
+`App.State` 는 유일한 진실 공급원입니다. 직접 필드를 건드리지 말고 메서드를 쓰세요.
 
 ```js
 App.State.addComponent(comp);         // ✅ 내부에서 _mutate → 스냅샷 → emit
 App.State.components.push(comp);      // ❌ Undo 히스토리·렌더 갱신 누락
 ```
 
-새 뮤테이션 메서드를 추가할 때는 `_mutate(fn)` 으로 감싸면
-`_beginAction()` → 변경 → `_endAction()`(스냅샷) → `emit('state:changed')` 가
-자동으로 처리됩니다.
+`removeComponent(id)` 는 전원에 딸린 자동 스위치를 단독으로 지우면 `false` 를
+돌려주고, 전원을 지우면 그 스위치도 함께 지웁니다.
 
----
+## 이벤트 흐름
 
-## 확장 가이드
+```
+사용자 입력 (Interaction)
+   ▼
+App.State 변경 ──emit──► 'state:changed' ──► Solver.run() (idle 디바운스) ──► 'solver:done'
+                                                                       ├─► PropPanel.refresh()
+                                                                       ├─► EditRenderer.scheduleRender()
+                                                                       ├─► RunRenderer._initPools()
+                                                                       └─► TransientGraph / Scope 재그리기
+모드 전환 ──► Solver.solveNow() (열림/닫힘 즉시) ──► 렌더러 시작
+실행 모드 ──emit──► 'run:time' (재생 시간) ──► 과도 그래프·오실로스코프 커서
+뷰포트 변경 ──emit──► 'viewport:changed' ──► GridRenderer.render()
+```
 
-### 새 소자 타입 추가
+## 캔버스 레이어
 
-1. **`src/js/core/constants.js`**
-   - `TYPE` 열거형에 항목 추가
-   - `SIDEBAR_ITEMS` 에 팔레트 항목 추가 (`defValue`, `defValue2`, `shortUnit`)
-   - `COMP_PORTS` 에 포트 문자열 정의 (예: `'LR'`)
-   - 다중 연결이 필요하면 `MULTI_PORT_TYPES` 에 등록
-2. **`src/js/render/symbols.js`** — 심볼 드로잉 함수 추가.
-   `(cx, cy)` 중심, `r = size/2` 반지름 규약을 따르고 `draw()` 의 분기에 연결.
-   `ctx` 는 Canvas 컨텍스트일 수도, `App.SN.Recorder`(SVG 내보내기)일 수도 있으므로
-   **경로 API 만** 사용하세요 (`measureText`·`shadowBlur` 등은 기록기에 없습니다).
-   그러면 촬영(PNG·SVG)은 별도 작업 없이 자동으로 지원됩니다.
-3. **`src/js/circuit/solver.js`** — MNA 스탬프(stamp) 추가.
-   DC 경로와 AC 경로 양쪽 모두 처리
-4. **`src/js/ui/prop-panel.js`** — `FIELDS` 테이블에 편집 가능한 물리량 정의
+| 레이어 | z | 담당 | 갱신 |
+| --- | --- | --- | --- |
+| `#canvas-bg` | 1 | GridRenderer | 뷰포트 변화 시 |
+| `#canvas-main` | 2 | EditRenderer / AnalogyRenderer | rAF 디바운스 |
+| `#canvas-anim` | 3 | RunRenderer | 실행 모드 매 프레임 |
 
-### 새 스타일 파일 추가
+## 좌표계
 
-`src/styles/` 에 파일을 만들고 `index.html` 의 `<link>` 목록에 추가하되,
-**`responsive.css` 보다 앞에** 두어야 미디어 쿼리 오버라이드가 정상 동작합니다.
-
-### 새 JS 모듈 추가
-
-IIFE 래퍼 규약을 지키고 `index.html` 의 `<script>` 목록에서
-**의존 대상보다 뒤에** 배치하세요.
-
----
+`grid` (논리 칸) ↔ `pixel = grid × CELL_SIZE × scale + offset`. 포트 이름(L/R/T/B)은
+단자 식별자이며 회전해도 바뀌지 않습니다 — 도선의 `fromPort/toPort` 를 회전에 맞춰
+고치면 토폴로지가 깨집니다.
 
 ## 코딩 컨벤션
 
-- **ES5 문법 기준** — 트랜스파일 없이 넓은 브라우저 호환성을 유지합니다
-  (`var`, `function`, IIFE). 일부 축약 객체 리터럴만 예외적으로 사용
-- 모든 파일 상단에 `'use strict';`
-- 내부 전용 식별자는 `_` 접두사 (`_private`, `_render`)
-- 주석은 한국어. 모듈 헤더에 설계 의도·좌표 규약·주의사항을 명시
-
----
-
-## 참고
-
-- 이 프로젝트는 원래 단일 `index.html`(약 7,900줄) 이었으며, 동작을 그대로 유지한 채
-  위 디렉토리 구조로 분리되었습니다. CSS 캐스케이드 순서와 JS 실행 순서는
-  원본과 동일하게 보존되어 있습니다.
-- 헤드리스 브라우저 검증 결과 분리 전후의 렌더 DOM, 캔버스 픽셀,
-  MNA 해석 결과가 모두 일치합니다.
-- 분리 이후 유일한 동작 변경: 모바일에서 소자 배치 시 사이드바가 자동으로 닫히도록
-  `main.js` 의 `_place()` 에 `component:placed` 발행을 추가했습니다.
-  (구독 코드는 원래 있었으나 발행부가 누락되어 있던 문제)
+- **ES5 문법** (`var`, `function`, IIFE) — 트랜스파일 없이 넓은 호환성
+- 모든 파일 상단 `'use strict'`, 내부 식별자는 `_` 접두사
+- 주석은 한국어. 모듈 헤더에 설계 의도·규약·주의사항을 적는다
+- 새 CSS 는 `responsive.css` 보다 앞에, 새 JS 는 의존 대상보다 뒤에 링크

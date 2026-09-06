@@ -453,7 +453,10 @@ App.RunRenderer=(function(){
   function stop(){
     if(_rafId!==null){ cancelAnimationFrame(_rafId); _rafId=null; }
     App.Events.off('solver:done', _initPools);
-    if(_cv&&_ctx){ var vs1=App.Geo.viewSize(); _ctx.clearRect(0,0,vs1.w,vs1.h); }
+    if(_cv&&_ctx){
+      /* 변환과 무관하게 백업 저장소 전체를 지운다 (배율 화면에서 잔상 방지) */
+      _ctx.save(); _ctx.setTransform(1,0,0,1,0,0); _ctx.clearRect(0,0,_cv.width,_cv.height); _ctx.restore();
+    }
   }
 
   return{start:start, stop:stop};

@@ -25,7 +25,10 @@ App.Post.wireChannels=function(nl, getCompI, K){
   var comps=nl.comps, wires=nl.wires;
   var compById={};
   comps.forEach(function(c){ compById[c.id]=c; });
-  function isPass(c){ return !!c && (NODE_TYPES[c.type] || nl.passthrough[c.id]); }
+  /* KCL 필링 대상 = 분기점·닫힌 스위치. 접지·레일 라벨은 제외한다 — 같은 이름의
+   *   라벨끼리는 도선 없이 노드로 이어지므로 '이 소자의 도선들' 만으로는 KCL 이
+   *   성립하지 않는다 (라벨 하나에 도선 하나 → 잔차 0 → 전류 0 으로 오판). */
+  function isPass(c){ return !!c && (App.Netlist.isJunction(c) || nl.passthrough[c.id]); }
   function zeros(){ var a=new Array(K); for(var i=0;i<K;i++) a[i]=0; return a; }
 
   /* getCompI(c, portId) → 그 포트로 소자에 '들어가는' 전류 채널 (또는 null).
@@ -44,8 +47,11 @@ App.Post.wireChannels=function(nl, getCompI, K){
   wires.forEach(function(w){
     var fc=compById[w.fromId], tc=compById[w.toId];
     var fP=isPass(fc)||!fc, tP=isPass(tc)||!tc;
-    if(!fP){ var a=fromComp(fc,w.fromPort,true); if(a) chan[w.id]=a; }
-    else if(!tP){ var b=fromComp(tc,w.toPort,false); if(b) chan[w.id]=b; }
+    /* 전류를 아는 쪽(스탬프된 소자)에서 결정. from 쪽이 접지·라벨처럼 전류를
+     *   모르면(null) to 쪽을 본다. */
+    var a=(!fP)?fromComp(fc,w.fromPort,true):null;
+    if(!a&&!tP) a=fromComp(tc,w.toPort,false);
+    if(a) chan[w.id]=a;
     if(w.fromId===w.toId) return;            /* 자기 루프: KCL 정보 없음 */
     if(inc[w.fromId]) inc[w.fromId].push(w);
     if(inc[w.toId])   inc[w.toId].push(w);

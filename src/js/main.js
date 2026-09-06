@@ -469,7 +469,7 @@ App.Main=(function(){
     function _makeToggle(btnId, prop){
       var btn=document.getElementById(btnId);
       if(!btn) return;
-      function _sync(){btn.classList.toggle('active', App.State[prop]);}
+      function _sync(){btn.classList.toggle('active', !!App.State[prop]);}   /* undefined 를 넘기면 토글돼 버린다 */
       btn.addEventListener('click',function(){
         App.State[prop]=!App.State[prop];
         _sync();
