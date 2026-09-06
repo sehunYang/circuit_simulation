@@ -375,10 +375,19 @@ App.Solver=(function(){
         /* Re[(p.re+j·p.im)·e^(jωt)] = p.re·cos(ωt) − p.im·sin(ωt) */
         return base + p.re*Math.cos(omega*t) - p.im*Math.sin(omega*t);
       }
+      /* DC 성분(부호 있는 실수)을 따로 노출 — 혼합 회로의 실효값·평균전력은
+       *   |I_dc|+|I_ac| 표시값으로는 계산할 수 없다 (I_rms=√(I_dc²+|I_ac|²/2)) */
+      var dcCompI={}, dcCompV={};
+      comps.forEach(function(c){
+        dcCompI[c.id]=(dcI&&dcI[c.id])?dcI[c.id].re:0;
+        dcCompV[c.id]=(dcV&&dcV[c.id])?dcV[c.id].re:0;
+      });
       result.acPhasor={
         omega : omega,
         compI : acI,   /* {id:{re,im}} — 복소 전류 페이저 (AC 성분) */
         compV : acV,   /* {id:{re,im}} — 복소 전압 페이저 (AC 성분) */
+        dcCompI: dcCompI,  /* {id:실수} — DC 성분 전류 (혼합 회로, 순수 AC 면 0) */
+        dcCompV: dcCompV,  /* {id:실수} — DC 성분 전압 */
         /* t(초)의 순시 전류/전압 i(t)=I_dc+Re[I·e^(jωt)] */
         instCurrent: function(compId,t){ return inst(acI,dcI,compId,t); },
         instVoltage: function(compId,t){ return inst(acV,dcV,compId,t); },

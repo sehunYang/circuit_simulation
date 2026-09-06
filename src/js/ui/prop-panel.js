@@ -165,12 +165,21 @@ App.PropPanel=(function(){
       var isAC=!!(sr.acPhasor);
 
       if(isAC){
-        /* ── AC: 피크값 + RMS + 임피던스 ── */
-        var omega=sr.acPhasor.omega;
+        /* ── AC(혼합 포함): 피크 · 실효값 · 임피던스 · 평균전력 ──
+         *   i(t) = I_dc + Re[I·e^{jωt}] 이므로
+         *     피크   = |I_dc| + |I|            (최대 순시값 — 솔버 표시값)
+         *     실효값 = √(I_dc² + |I|²/2)       (혼합이면 peak/√2 가 아니다)
+         *   평균전력은 역률을 포함해야 한다:
+         *     저항   P = I_rms²·R
+         *     전원   P = V_dc·I_dc + Re(V·I*)/2   (피상전력 V_rms·I_rms 와 다름) */
+        var ph=sr.acPhasor, omega=ph.omega;
+        var Iph=ph.compI[comp.id]||{re:0,im:0}, Vph=ph.compV[comp.id]||{re:0,im:0};
+        var Idc=(ph.dcCompI&&ph.dcCompI[comp.id])||0, Vdc=(ph.dcCompV&&ph.dcCompV[comp.id])||0;
+        var Iac=Math.hypot(Iph.re,Iph.im), Vac=Math.hypot(Vph.re,Vph.im);
         var Ipk=I!=null?Math.abs(I):null;
         var Vpk=V!=null?Math.abs(V):null;
-        var Irms=Ipk!=null?Ipk/Math.SQRT2:null;
-        var Vrms=Vpk!=null?Vpk/Math.SQRT2:null;
+        var Irms=I!=null?Math.sqrt(Idc*Idc+Iac*Iac/2):null;
+        var Vrms=V!=null?Math.sqrt(Vdc*Vdc+Vac*Vac/2):null;
         mDiv.appendChild(_row('전류(peak)',_fmtCurrent(Ipk)));
         mDiv.appendChild(_row('전류(RMS)', _fmtCurrent(Irms)));
         mDiv.appendChild(_row('전압(peak)',_fmtVoltage(Vpk)));
@@ -187,10 +196,14 @@ App.PropPanel=(function(){
         }
         if(Z!=null&&isFinite(Z))
           mDiv.appendChild(_row(Zlabel, Z>=1000?(Z/1000).toFixed(3)+' kΩ':Z.toFixed(3)+' Ω'));
-        if(comp.type===TYPE.RESISTOR&&Irms!=null&&Vrms!=null)
-          mDiv.appendChild(_row('소비전력(평균)',_fmtPower(Vrms*Irms)));
-        if((comp.type===TYPE.AC_SOURCE)&&Irms!=null&&Vrms!=null)
-          mDiv.appendChild(_row('공급전력(평균)',_fmtPower(Vrms*Irms)));
+        if(comp.type===TYPE.RESISTOR&&Irms!=null)
+          mDiv.appendChild(_row('소비전력(평균)',_fmtPower(Irms*Irms*(comp.value||0))));
+        if(comp.type===TYPE.AC_SOURCE||comp.type===TYPE.DC_SOURCE){
+          /* 전원 평균전력 = DC 항 + AC 항(역률 포함). AC 전원의 DC 성분 전압과
+           * DC 전원의 AC 성분 전압은 0 이므로 각자 한 항만 남는다. */
+          var Pavg=Math.abs(Vdc*Idc+(Vph.re*Iph.re+Vph.im*Iph.im)/2);
+          mDiv.appendChild(_row('공급전력(평균)',_fmtPower(Pavg)));
+        }
       } else {
         /* ── DC ── */
         mDiv.appendChild(_row('전류',_fmtCurrent(I)));
