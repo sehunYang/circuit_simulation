@@ -20,23 +20,24 @@ App.POE=(function(){
   /* ── 회로 정의 도우미: [key,type,gx,gy,rot,value,value2,extra] ── */
   function C(key,type,gx,gy,rot,value,value2,extra){ var o={key:key,type:type,gx:gx,gy:gy,rot:rot||0,value:value||0,value2:(value2==null?null:value2)}; if(extra) Object.keys(extra).forEach(function(k){o[k]=extra[k];}); return o; }
   function W(a,ap,b,bp,dir){ return [a,ap,b,bp,dir||'H-first']; }
-  var VCC=function(key,gx,gy){ return C(key,'LABEL',gx,gy,0,0,null,{label:'VCC'}); };
+  /* 레일 라벨: 전위 V 를 주면 그 자체가 접지 기준 전원 (같은 이름 VCC 는 한 노드) */
+  var VCC=function(key,gx,gy,V){ return C(key,'LABEL',gx,gy,0,V||0,null,{label:'VCC'}); };
   var GND=function(key,gx,gy){ return C(key,'GROUND',gx,gy,0,0); };
-  function power(V){ return [C('dc','DC_SOURCE',40,50,90,V), VCC('lv',40,48), GND('lg',40,52)]; }
-  var powerW=[W('lv','B','dc','L'), W('dc','R','lg','T')];
+  /* 전지 + 딸린 자동 스위치 (편집 열림 · 실행 닫힘). 전지는 rot 90 (L = 위 = +), 스위치는 바로 위 칸 */
+  function battery(V,gx,gy,extraSw){ var sw={autoFor:'dc'}; if(extraSw) Object.keys(extraSw).forEach(function(k){sw[k]=extraSw[k];});
+    return [C('dc','DC_SOURCE',gx,gy,90,V), C('sw','SWITCH',gx,gy-1,90,0,null,sw)]; }
+  var batteryW=[W('dc','L','sw','R')];
 
   var EXAMPLES=[
     { id:'brightness', title:'전구 밝기 순위', level:'기초',
       misconception:'전류 소모 · 밝기 = 전류',
       circuit:{
-        comps:[C('dc','DC_SOURCE',47,50,90,12), C('A','BULB',49,48,0,100,1,{label:'A'}),
-               C('ja','JUNCTION_3',51,48), C('jb','JUNCTION_3',54,48),
-               C('B','BULB',51,49,90,100,1,{label:'B'}), C('C','BULB',54,49,90,100,1,{label:'C'}),
-               C('jc','JUNCTION_3',51,50,180), C('jd','JUNCTION_3',54,50,180)],
-        wires:[W('dc','L','A','L','V-first'), W('A','R','ja','L'), W('ja','R','jb','L'),
-               W('ja','B','B','L'), W('jb','B','C','L'), W('B','R','jc','B'), W('C','R','jd','B'),
-               W('jc','L','jd','R'), W('dc','R','jc','R','V-first')],
-        center:[51,49.5] },
+        comps:battery(12,46,48).concat([C('A','BULB',48,46,0,100,1,{label:'A'}), C('ja','JUNCTION_3',50,46),
+               C('B','BULB',50,47,90,100,1,{label:'B'}), C('C','BULB',53,47,90,100,1,{label:'C'}),
+               C('jc','JUNCTION_3',50,48,180)]),
+        wires:batteryW.concat([W('sw','L','A','L','V-first'), W('A','R','ja','L'), W('ja','R','C','L','H-first'),
+               W('ja','B','B','L'), W('B','R','jc','B'), W('C','R','jc','L','V-first'), W('jc','R','dc','R','H-first')]),
+        center:[49.5,47.5] },
       question:'같은 전구 세 개. A 는 전지에 직렬, B 와 C 는 서로 병렬입니다. 밝기 순위는?',
       options:[
         {label:'A > B = C', correct:true},
@@ -49,11 +50,12 @@ App.POE=(function(){
     { id:'parallel', title:'병렬로 전구 추가하기', level:'기초',
       misconception:'정전류 전지 · 병렬 = 저항 증가',
       circuit:{
-        comps:[C('dc','DC_SOURCE',47,50,90,12), C('ja','JUNCTION_3',50,48), C('A','BULB',50,49,90,100,1,{label:'A'}),
-               C('jc','JUNCTION_3',50,50,180), C('sw','SWITCH',53,48,90,0,null,{on:false}), C('B','BULB',53,49,90,100,1,{label:'B'})],
-        wires:[W('dc','L','ja','L','V-first'), W('ja','B','A','L'), W('A','R','jc','B'),
-               W('ja','R','sw','L'), W('sw','R','B','L'), W('B','R','jc','L','V-first'), W('jc','R','dc','R','V-first')],
-        center:[51,49.5] },
+        comps:battery(12,46,49).concat([C('ja','JUNCTION_3',49,46), C('A','BULB',49,47,90,100,1,{label:'A'}),
+               C('sw2','SWITCH',52,47,90,0,null,{on:false}), C('B','BULB',52,48,90,100,1,{label:'B'}),
+               C('jc','JUNCTION_3',49,49,180)]),
+        wires:batteryW.concat([W('sw','L','ja','L','V-first'), W('ja','B','A','L'), W('A','R','jc','B'),
+               W('ja','R','sw2','L','H-first'), W('sw2','R','B','L'), W('B','R','jc','L','V-first'), W('jc','R','dc','R','H-first')]),
+        center:[49.5,48] },
       question:'전구 A 가 켜져 있습니다. 스위치를 닫아 전구 B 를 A 와 병렬로 추가하면?',
       options:[
         {label:'A 밝기 그대로, 전지 전류는 2배', correct:true},
@@ -66,9 +68,9 @@ App.POE=(function(){
     { id:'openswitch', title:'열린 스위치 양단의 전압', level:'기초',
       misconception:'"열리면 전압도 0"',
       circuit:{
-        comps:[C('dc','DC_SOURCE',48,50,90,12), C('sw','SWITCH',50,48,0,0,null,{on:false}), C('R','RESISTOR',52,48,0,100)],
-        wires:[W('dc','L','sw','L','V-first'), W('sw','R','R','L'), W('R','R','dc','R','V-first')],
-        center:[51,49.5] },
+        comps:battery(12,46,48,{on:false}).concat([C('R','RESISTOR',49,46,0,100)]),
+        wires:batteryW.concat([W('sw','L','R','L','V-first'), W('R','R','dc','R','V-first')]),
+        center:[48.5,47.5] },
       question:'스위치가 열려 있어 전류가 0 입니다. 이때 스위치 양단의 전압은?',
       options:[
         {label:'12 V (전지 전압 전부)', correct:true},
@@ -80,9 +82,10 @@ App.POE=(function(){
     { id:'rectifier', title:'다이오드의 정류 작용', level:'심화',
       misconception:'"다이오드 = 저항을 줄이는 소자"',
       circuit:{
-        comps:[C('ac','AC_SOURCE',47,50,90,10,60), C('D','DIODE',49,48,0,0), C('R','RESISTOR',52,50,90,1000)],
-        wires:[W('ac','L','D','L','V-first'), W('D','R','R','L'), W('R','R','ac','R')],
-        center:[50,49.5] },
+        comps:[C('ac','AC_SOURCE',46,48,90,10,60), C('sw','SWITCH',46,47,90,0,null,{autoFor:'ac'}),
+               C('D','DIODE',48,46,0,0), C('R','RESISTOR',51,47,90,1000)],
+        wires:[W('ac','L','sw','R'), W('sw','L','D','L','V-first'), W('D','R','R','L','H-first'), W('R','R','ac','R','V-first')],
+        center:[49,47.5] },
       question:'교류 전원(10 V, 60 Hz)에 다이오드와 저항을 직렬로 이었습니다. 저항 양단 전압 파형은?',
       options:[
         {label:'양의 반주기만 남고 음의 반주기는 0', correct:true},
@@ -95,11 +98,11 @@ App.POE=(function(){
     { id:'transistor', title:'트랜지스터의 스위칭 작용', level:'심화',
       misconception:'"전구 밝기 = 베이스 전류"',
       circuit:{
-        comps:power(12).concat([VCC('lb',47,44), C('L','BULB',47,45,90,100,1,{label:'전구'}), C('Q','NPN',47,48,0,100), GND('ge',47,50),
-               VCC('li',44,44), C('sw','SWITCH',44,45,90,0,null,{on:false}), C('Rb','RESISTOR',44,46,90,4700)]),
-        wires:powerW.concat([W('lb','B','L','L'), W('L','R','Q','T'), W('Q','B','ge','T'),
-               W('li','B','sw','L'), W('sw','R','Rb','L'), W('Rb','R','Q','L','V-first')]),
-        center:[45.5,48], rail:true },
+        comps:[VCC('lb',47,44,12), C('L','BULB',47,45,90,100,1,{label:'전구'}), C('Q','NPN',47,48,0,100), GND('ge',47,50),
+               VCC('li',44,44,12), C('sw','SWITCH',44,45,90,0,null,{on:false}), C('Rb','RESISTOR',44,46,90,4700)],
+        wires:[W('lb','B','L','L'), W('L','R','Q','T'), W('Q','B','ge','T'),
+               W('li','B','sw','L'), W('sw','R','Rb','L'), W('Rb','R','Q','L','V-first')],
+        center:[46,47], rail:true },
       question:'베이스에는 4.7 kΩ 을 거쳐 2 mA 정도만 흐릅니다. 스위치를 닫으면 컬렉터의 전구는?',
       options:[
         {label:'환하게 켜진다 — 작은 베이스 전류가 100배 큰 컬렉터 전류를 열어 준다', correct:true},
@@ -111,13 +114,13 @@ App.POE=(function(){
     { id:'not', title:'논리 회로 — NOT 게이트', level:'심화', truth:{inputs:['swA'], output:'out', fn:function(a){return a?0:1;}},
       misconception:'게이트를 블랙박스로만 아는 상태',
       circuit:{
-        comps:power(5).concat([VCC('la',44,44), C('swA','SWITCH',44,45,90,0,null,{on:false,label:'A'}), C('RbA','RESISTOR',44,46,90,10000),
-               VCC('lc',47,44), C('Rc','RESISTOR',47,45,90,1000), C('Q','NPN',47,48,0,100), GND('ge',47,50),
-               C('out','BULB',50,47,90,100000,0.0002,{label:'출력'}), GND('go',50,49)]),
-        wires:powerW.concat([W('la','B','swA','L'), W('swA','R','RbA','L'), W('RbA','R','Q','L','V-first'),
-               W('lc','B','Rc','L'), W('Rc','R','Q','T'), W('Q','B','ge','T'),
-               W('Q','T','out','L'), W('out','R','go','T')]),
-        center:[46,47.5], rail:true },
+        comps:[VCC('la',44,44,5), C('swA','SWITCH',44,45,90,0,null,{on:false,label:'A'}), C('RbA','RESISTOR',44,46,90,10000),
+               VCC('lc',47,44,5), C('Rc','RESISTOR',47,45,90,1000), C('J','JUNCTION_3',47,47,270), C('Q','NPN',47,48,0,100), GND('ge',47,50),
+               C('out','BULB',50,47,0,100000,0.0002,{label:'출력'}), GND('go',52,48)],
+        wires:[W('la','B','swA','L'), W('swA','R','RbA','L'), W('RbA','R','Q','L','V-first'),
+               W('lc','B','Rc','L'), W('Rc','R','J','R'), W('J','L','Q','T'), W('Q','B','ge','T'),
+               W('J','B','out','L'), W('out','R','go','T','H-first')],
+        center:[48,47.5], rail:true },
       question:'입력 A(스위치 닫힘 = 1)에 따라 출력 전구는? 진리표의 예측 칸을 채우세요.',
       options:[{label:'진리표를 채웠습니다', correct:true}],
       observe:'실행 모드에서 스위치 A 를 클릭하며 출력 전구를 보세요. 아래 진리표의 관찰 칸은 회로가 두 경우를 풀어 채운 값입니다.',
@@ -126,16 +129,17 @@ App.POE=(function(){
     { id:'and', title:'논리 회로 — AND 게이트 (다이오드)', level:'심화', truth:{inputs:['swA','swB'], output:'out', fn:function(a,b){return (a&&b)?1:0;}},
       misconception:'게이트를 블랙박스로만 아는 상태',
       circuit:{
-        comps:power(5).concat([VCC('lp',48,44), C('Rp','RESISTOR',48,45,90,10000), C('J','JUNCTION_4',48,47),
-               C('DA','DIODE',46,47,180,0), C('DB','DIODE',50,47,0,0),
-               VCC('la',44,44), C('swA','SWITCH',44,45,90,0,null,{on:false,label:'A'}), C('JA','JUNCTION_4',44,46), C('RdA','RESISTOR',44,47,90,1000), GND('ga',44,49),
-               VCC('lb',53,44), C('swB','SWITCH',53,45,90,0,null,{on:false,label:'B'}), C('JB','JUNCTION_4',53,46), C('RdB','RESISTOR',53,47,90,1000), GND('gb',53,49),
-               C('out','BULB',48,48,90,100000,0.0002,{label:'출력'}), GND('go',48,50)]),
-        wires:powerW.concat([W('lp','B','Rp','L'), W('Rp','R','J','T'), W('J','L','DA','L'), W('J','R','DB','L'),
-               W('la','B','swA','L'), W('swA','R','JA','T'), W('JA','B','RdA','L'), W('RdA','R','ga','T'), W('JA','R','DA','R'),
-               W('lb','B','swB','L'), W('swB','R','JB','T'), W('JB','B','RdB','L'), W('RdB','R','gb','T'), W('JB','L','DB','R'),
-               W('J','B','out','L'), W('out','R','go','T')]),
-        center:[47,47.5], rail:true },
+        comps:[VCC('lp',48,43,5), C('Rp','RESISTOR',48,44,90,10000), C('J','JUNCTION_4',48,46),
+               C('DA','DIODE',46,46,180,0), C('DB','DIODE',50,46,0,0),
+               VCC('la',44,44,5), C('swA','SWITCH',44,45,90,0,null,{on:false,label:'A'}), C('JA','JUNCTION_3',44,46,270), C('RdA','RESISTOR',44,47,90,1000), GND('ga',44,49),
+               VCC('lb',53,44,5), C('swB','SWITCH',53,45,90,0,null,{on:false,label:'B'}), C('JB','JUNCTION_3',53,46,90), C('RdB','RESISTOR',53,47,90,1000), GND('gb',53,49),
+               C('out','BULB',48,47,90,100000,0.0002,{label:'출력'}), GND('go',48,49)],
+        /* JA(rot 270): R=위, L=아래, B=오른쪽 · JB(rot 90): L=위, R=아래, B=왼쪽 */
+        wires:[W('lp','B','Rp','L'), W('Rp','R','J','T'), W('J','L','DA','L'), W('J','R','DB','L'),
+               W('la','B','swA','L'), W('swA','R','JA','R'), W('JA','L','RdA','L'), W('RdA','R','ga','T'), W('JA','B','DA','R'),
+               W('lb','B','swB','L'), W('swB','R','JB','L'), W('JB','R','RdB','L'), W('RdB','R','gb','T'), W('JB','B','DB','R'),
+               W('J','B','out','L'), W('out','R','go','T')],
+        center:[48.5,46.5], rail:true },
       question:'두 입력 A, B (스위치 닫힘 = 1). 출력 전구는 언제 켜질까요? 진리표를 예측하세요.',
       options:[{label:'진리표를 채웠습니다', correct:true}],
       observe:'스위치 A·B 를 클릭해 네 조합을 만들어 보세요. 다이오드를 클릭하면 순방향/역방향 상태가 보입니다. 아래 관찰 칸은 회로가 네 조합을 풀어 채운 값입니다.',
@@ -144,14 +148,14 @@ App.POE=(function(){
     { id:'or', title:'논리 회로 — OR 게이트 (다이오드)', level:'심화', truth:{inputs:['swA','swB'], output:'out', fn:function(a,b){return (a||b)?1:0;}},
       misconception:'게이트를 블랙박스로만 아는 상태',
       circuit:{
-        comps:power(5).concat([VCC('la',44,44), C('swA','SWITCH',44,45,90,0,null,{on:false,label:'A'}), C('DA','DIODE',44,46,90,0),
-               VCC('lb',52,44), C('swB','SWITCH',52,45,90,0,null,{on:false,label:'B'}), C('DB','DIODE',52,46,90,0),
-               C('J','JUNCTION_4',48,47), C('Rd','RESISTOR',48,48,90,1000), GND('gr',48,50),
-               C('out','BULB',50,48,90,100000,0.0002,{label:'출력'}), GND('go',50,50)]),
-        wires:powerW.concat([W('la','B','swA','L'), W('swA','R','DA','L'), W('DA','R','J','L'),
-               W('lb','B','swB','L'), W('swB','R','DB','L'), W('DB','R','J','R'),
-               W('J','B','Rd','L'), W('Rd','R','gr','T'), W('J','B','out','L'), W('out','R','go','T')]),
-        center:[47,47.5], rail:true },
+        comps:[VCC('la',44,43,5), C('swA','SWITCH',44,44,90,0,null,{on:false,label:'A'}), C('DA','DIODE',44,45,90,0),
+               VCC('lb',52,43,5), C('swB','SWITCH',52,44,90,0,null,{on:false,label:'B'}), C('DB','DIODE',52,45,90,0),
+               C('J','JUNCTION_3',48,46), C('J2','JUNCTION_3',48,47,270), C('Rd','RESISTOR',48,48,90,1000), GND('gr',48,50),
+               C('out','BULB',50,47,0,100000,0.0002,{label:'출력'}), GND('go',52,48)],
+        wires:[W('la','B','swA','L'), W('swA','R','DA','L'), W('DA','R','J','L','V-first'),
+               W('lb','B','swB','L'), W('swB','R','DB','L'), W('DB','R','J','R','V-first'),
+               W('J','B','J2','R'), W('J2','L','Rd','L'), W('Rd','R','gr','T'), W('J2','B','out','L'), W('out','R','go','T','H-first')],
+        center:[48,46.5], rail:true },
       question:'두 입력 A, B (스위치 닫힘 = 1). 출력 전구는 언제 켜질까요? 진리표를 예측하세요.',
       options:[{label:'진리표를 채웠습니다', correct:true}],
       observe:'스위치 A·B 를 클릭해 네 조합을 만들어 보세요. 아래 관찰 칸은 회로가 네 조합을 풀어 채운 값입니다.',
@@ -166,6 +170,7 @@ App.POE=(function(){
     ex.circuit.comps.forEach(function(c){
       var comp={id:S.genId(),type:TYPE[c.type],gridX:c.gx,gridY:c.gy,rotation:c.rot,value:c.value,value2:c.value2,label:c.label||''};
       if(c.on===false) comp.on=false;
+      if(c.autoFor&&ids[c.autoFor]) comp.autoFor=ids[c.autoFor];   /* 전지에 딸린 스위치 (삭제 불가·편집 열림·실행 닫힘) */
       if(comp.type===TYPE.DC_SOURCE||comp.type===TYPE.AC_SOURCE) comp.rint=0;
       ids[c.key]=comp.id; S.addComponent(comp);
     });

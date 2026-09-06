@@ -26,6 +26,9 @@ App.RunRenderer=(function(){
    *   전류가 절반이면 간격이 두 배가 된다(밀도 ∝ 전류).
    *   (과거 round(|I|·8) 은 mA 대 전류에서 늘 1개라 밀도가 전류를 전혀
    *    반영하지 못했다) */
+  /* 정규화 바닥값: 회로 전체가 이 값보다 작으면(다이오드 역방향 누설 pA 등) 흐름 없음으로 본다.
+   *   상대 정규화만 쓰면 누설 전류가 '최대 전류' 가 되어 전자가 움직여 버린다. */
+  var I_FLOOR = 1e-9;
   function _particleCount(ratio, pathLen){
     if(ratio<0.01) return 0;    /* 최대 전류의 1% 미만(5τ 뒤 e⁻⁵=0.7% 등)은 흐름 없음 */
     var n=Math.round(ratio*pathLen/ELECTRON_SPACING_MAX);
@@ -76,7 +79,7 @@ App.RunRenderer=(function(){
 
     /* AC 순시 전류 계산 — 먼저 최대값 파악 */
     var wireInstI = {};  /* wire.id → 순시 전류 */
-    var maxAbsI = 1e-15;
+    var maxAbsI = I_FLOOR;
 
     App.State.wires.forEach(function(wire){
       var pool = _pools[wire.id]; if(!pool) return;
@@ -136,9 +139,9 @@ App.RunRenderer=(function(){
    *   속도·밀도 정규화 기준은 파형 전 구간의 최대 도선 전류(_waveMax) — 재생 중
    *   기준이 흔들리지 않게 한 번만 계산한다. */
   var WAVE_PLAY_SEC = 8;      /* DC 과도 파형 전체를 재생하는 화면상 시간(초) */
-  var _waveMax = 1e-15;
+  var _waveMax = I_FLOOR;
   function _computeWaveMax(sr){
-    _waveMax = 1e-15;
+    _waveMax = I_FLOOR;
     if(!sr||!sr.wave) return;
     Object.keys(sr.wave.wire).forEach(function(id){
       var a=sr.wave.wire[id];
@@ -221,7 +224,7 @@ App.RunRenderer=(function(){
       }
       return _wireCurrentMag(wire, sr, wc);
     }
-    var maxI = 1e-15;
+    var maxI = I_FLOOR;
     App.State.wires.forEach(function(wire){
       var I = wireRef(wire);
       if(I > maxI) maxI = I;

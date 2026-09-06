@@ -512,7 +512,9 @@ App.AnalogyRenderer=(function(){
     var dV0=vF0-vT0, dVi=vFi-vTi;
     var dVuse=(Math.abs(dV0)>=Math.abs(dVi))?dV0:dVi;
     var sign;
-    if(Math.abs(dVuse)>1e-9){
+    if(Math.abs(signedI)>1e-15){
+      sign=signedI>0?1:-1;             /* 엔진이 준 도선 부호 전류 (from→to +) */
+    } else if(Math.abs(dVuse)>1e-9){
       sign=dVuse>0?1:-1;
     } else {
       /* 등전위 도선: 연결 소자의 부호 전류로 방향 결정.
@@ -1016,6 +1018,246 @@ App.AnalogyRenderer=(function(){
     _dynamics.push({kind:'ind',wheel:wheel,rotor:rotor,comp:c,cur:lm,sgn:dirSign});
   }
 
+  /* ════════ 새 소자 (전구·스위치·다이오드·트랜지스터·접지·레일) ════════
+   *   같은 수로 문법을 쓴다: 높이 = 전위, 유속 = 전류.
+   *     · 전구        → 물레방아 + 등불 (밝기 = 물레방아가 돌리는 발전기 출력 ∝ I²R)
+   *     · 스위치      → 수문(sluice gate): 닫힘 = 문이 올라가 물이 지남, 열림 = 문이 내려와 막음
+   *     · 다이오드    → 역류 방지 밸브(check valve): 순방향에만 열리는 경첩 문
+   *     · 트랜지스터  → 제어 수문: 작은 베이스 물길이 레버로 큰 수문을 연다
+   *     · 접지        → 배수구: 가장 낮은 곳으로 물이 빠져나간다
+   *     · 레일 라벨   → 급수 저수조: 같은 이름 = 같은 저수조, 전위가 있으면 펌프가 물을 채운다 */
+
+  /* 흐름 방향(a→b)으로 놓인 로컬 그룹: 로컬 +Z = 흐름, X = 수로 가로, Y = 위 */
+  function _flowGroup(a,b,center){
+    var g=new THREE.Group();
+    g.position.copy(center);
+    g.rotation.order='YXZ';
+    g.rotation.y=Math.atan2(b.x-a.x,b.z-a.z);
+    _scene.add(g);
+    return g;
+  }
+  /* 수문 틀 + 문짝. lift 0(막음)~1(완전 개방). {plate, setLift} 반환 */
+  function _makeGate(grp, opts){
+    opts=opts||{};
+    var woodDk=new THREE.MeshStandardMaterial({color:COL_WOOD_DK,roughness:0.85,metalness:0.02});
+    var steel=new THREE.MeshStandardMaterial({color:COL_STEEL,roughness:0.4,metalness:0.35});
+    var plateMat=new THREE.MeshStandardMaterial({color:opts.color||0x5b6b7a,roughness:0.6,metalness:0.3});
+    var frameH=TR_BOT+TR_H+1.25;
+    [-1,1].forEach(function(s){
+      var post=new THREE.Mesh(new THREE.BoxGeometry(0.16,frameH,0.16),woodDk);
+      post.position.set(s*(TR_W/2+0.1), -TR_BOT+frameH/2, 0);
+      grp.add(post);
+    });
+    var bar=new THREE.Mesh(new THREE.BoxGeometry(TR_W+0.5,0.14,0.16),woodDk);
+    bar.position.set(0,-TR_BOT+frameH,0); grp.add(bar);
+    /* 핸드휠(권양기) — 문을 들어 올리는 장치 */
+    var wheel=new THREE.Mesh(new THREE.TorusGeometry(0.22,0.035,8,18),steel);
+    wheel.rotation.x=Math.PI/2; wheel.position.set(0,-TR_BOT+frameH+0.16,0); grp.add(wheel);
+    var stem=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,frameH*0.6,8),steel);
+    stem.position.set(0,-TR_BOT+frameH-frameH*0.3,0); grp.add(stem);
+    /* 문짝 — 수로 안쪽 폭, 바닥에 내려오면 물길을 막는다 */
+    var plateH=TR_BOT+TR_H+0.05;
+    var plate=new THREE.Mesh(new THREE.BoxGeometry(TR_W-2*TR_TH+0.02,plateH,0.08),plateMat);
+    grp.add(plate);
+    var yDown=-TR_BOT-TR_TH+plateH/2;             // 바닥에 닿음 (막음)
+    var yUp=yDown+TR_BOT+0.55;                    // 물 위로 올라감 (개방)
+    function setLift(f){ plate.position.y=_lerp(yDown,yUp,_clamp(f,0,1)); }
+    setLift(opts.lift!=null?opts.lift:1);
+    return {plate:plate, setLift:setLift, stem:stem};
+  }
+  function _compOut(c){
+    var sr=App.State.solverResult;
+    return (sr&&sr.dc&&sr.dc.out&&sr.dc.out[c.id])||null;
+  }
+  function _compModel(c){
+    var m=(_branchModel&&_branchModel.byComp)?_branchModel.byComp[c.id]:null;
+    if(_wave&&_wave.elem[c.id]){ m=m||{i0:0,iinf:0,tau:1}; m.waveId=c.id; }
+    return m;
+  }
+  function _signedI(c){
+    var sr=App.State.solverResult;
+    return (sr&&sr.branchCurrents&&sr.branchCurrents[c.id])||0;
+  }
+
+  /* ── 전구 → 물레방아 + 등불 ── */
+  function _buildBulb(c){
+    _buildResistor(c);
+    var w=_wheels[_wheels.length-1];
+    if(!w||w.comp!==c) return;
+    var center=_compCenter(c);
+    var yTop=w.grp.position.y+w.wheelR+0.9;
+    var poleMat=new THREE.MeshStandardMaterial({color:COL_IRON,roughness:0.5,metalness:0.35});
+    var pz=center.z-1.25;
+    var pole=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,yTop+0.6,8),poleMat);
+    pole.position.set(center.x,(yTop-0.6)/2,pz); _scene.add(pole);
+    var arm=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.08,0.9),poleMat);
+    arm.position.set(center.x,yTop,pz+0.45); _scene.add(arm);
+    /* 발전기 벨트: 굴대 → 기둥 (물레방아가 등을 켠다는 연결) */
+    var belt=_tubeBetween(new THREE.Vector3(center.x,w.grp.position.y,center.z-0.75),
+                          new THREE.Vector3(center.x,w.grp.position.y,pz),0.03,0x333333,1);
+    _scene.add(belt);
+    var globeMat=new THREE.MeshStandardMaterial({color:0xfff2cc,emissive:0xffb347,emissiveIntensity:0,
+                  roughness:0.3,metalness:0,transparent:true,opacity:0.92});
+    var globe=new THREE.Mesh(new THREE.SphereGeometry(0.42,16,12),globeMat);
+    globe.position.set(center.x,yTop-0.35,center.z-0.35); _scene.add(globe);
+    var cap=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.3,0.18,10),poleMat);
+    cap.position.set(center.x,yTop+0.05,center.z-0.35); _scene.add(cap);
+    var light=new THREE.PointLight(0xffc36a,0,7,2);
+    light.position.copy(globe.position); _scene.add(light);
+    w.lamp=globe; w.lampLight=light; w.rated=Math.max(c.value2||1,1e-6);
+  }
+
+  /* ── 스위치 → 수문 ── */
+  function _buildSwitch(c){
+    var ports=App.Geo.getCompPorts(c);
+    var pA=_portPos(c,ports[0]), pB=_portPos(c,ports[1]);
+    var center=_compCenter(c);
+    var closed=App.Netlist.switchClosed(c, true);
+    if(pA.distanceTo(pB)>0.02) _scene.add(_troughBetween(pA,pB));
+    var grp=_flowGroup(pA,pB,center);
+    var gate=_makeGate(grp,{lift:closed?1:0});
+    if(closed){
+      var I=_signedI(c);
+      var lane=_addLane([pA.clone(),pB.clone()],I>=0?1:-1,'comp',c,_compModel(c),Math.abs(I));
+      if(lane) lane.staticSigned=I;
+    }
+    _dynamics.push({kind:'gate',gate:gate,comp:c,target:closed?1:0,cur:0});
+  }
+
+  /* ── 다이오드 → 역류 방지 밸브 ── */
+  function _buildDiode(c){
+    var ports=App.Geo.getCompPorts(c);                 // [애노드, 캐소드]
+    var pA=_portPos(c,ports[0]), pB=_portPos(c,ports[1]);
+    var center=_compCenter(c);
+    if(pA.distanceTo(pB)>0.02) _scene.add(_troughBetween(pA,pB));
+    var grp=_flowGroup(pA,pB,center);
+    var steel=new THREE.MeshStandardMaterial({color:COL_STEEL,roughness:0.4,metalness:0.35});
+    var stone=new THREE.MeshStandardMaterial({color:COL_STONE_DK,roughness:0.95,metalness:0.02});
+    /* 경첩 기둥 + 가로 축 */
+    [-1,1].forEach(function(s){
+      var post=new THREE.Mesh(new THREE.BoxGeometry(0.16,TR_BOT+TR_H+0.5,0.16),stone);
+      post.position.set(s*(TR_W/2+0.1),-TR_BOT-TR_TH+(TR_BOT+TR_H+0.5)/2,0); grp.add(post);
+    });
+    var hingeY=-TR_BOT+TR_H+0.3;
+    var axle=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,TR_W+0.4,8),steel);
+    axle.rotation.z=Math.PI/2; axle.position.set(0,hingeY,0); grp.add(axle);
+    /* 경첩 문(플랩): 위에 매달려 순방향(+Z)으로만 젖혀진다 */
+    var pivot=new THREE.Group(); pivot.position.set(0,hingeY,0); grp.add(pivot);
+    var flapH=hingeY+TR_BOT+TR_TH;
+    var flap=new THREE.Mesh(new THREE.BoxGeometry(TR_W-2*TR_TH+0.02,flapH,0.06),
+             new THREE.MeshStandardMaterial({color:COL_RUBBER,roughness:0.6,metalness:0.1}));
+    flap.position.y=-flapH/2; pivot.add(flap);
+    /* 허용 방향 표시: 벽 위 작은 화살표(콘) */
+    var cone=new THREE.Mesh(new THREE.ConeGeometry(0.14,0.4,10),
+             new THREE.MeshStandardMaterial({color:0xc8ffd8,emissive:0x7fd8a0,emissiveIntensity:0.5}));
+    cone.rotation.x=Math.PI/2; cone.position.set(TR_W/2+0.1,-TR_BOT+TR_H+0.75,0.35); grp.add(cone);
+    var I=_signedI(c), out=_compOut(c);
+    var fwd=out?out.region==='forward':(I>1e-9);
+    var lane=_addLane([pA.clone(),pB.clone()],1,'comp',c,_compModel(c),Math.abs(I));
+    if(lane) lane.staticSigned=I;
+    _dynamics.push({kind:'diode',pivot:pivot,comp:c,cur:_compModel(c),open:fwd?1:0,target:fwd?1:0});
+  }
+
+  /* ── 트랜지스터 → 제어 수문 (베이스 물길 → 레버 → 본류 수문) ── */
+  function _buildBJT(c){
+    var ports=App.Geo.getCompPorts(c);                 // [B(L), C(T), E(B)]
+    var pBase=_portPos(c,ports[0]), pC=_portPos(c,ports[1]), pE=_portPos(c,ports[2]);
+    var center=_compCenter(c);
+    var out=_compOut(c);
+    var isPnp=(c.type===TYPE.PNP);
+    var iC=out?out.iC:0, iB=out?out.iB:0;
+    /* 본류: 컬렉터 → 이미터 (pnp 는 반대로 흐르지만 수로는 같다) */
+    var mid=new THREE.Vector3(center.x,(pC.y+pE.y)/2,center.z);
+    _channelSeg(pC,new THREE.Vector3(center.x,pC.y,center.z));
+    _channelSeg(new THREE.Vector3(center.x,pC.y,center.z),mid);
+    _channelSeg(mid,new THREE.Vector3(center.x,pE.y,center.z));
+    _channelSeg(new THREE.Vector3(center.x,pE.y,center.z),pE);
+    /* 베이스 물길: 베이스 포트 → 본류 옆 레버 수반 */
+    var bEnd=new THREE.Vector3(center.x+(pBase.x-center.x)*0.35,pBase.y,center.z+(pBase.z-center.z)*0.35);
+    _channelSeg(pBase,bEnd);
+    _scene.add(_bendBasin(bEnd));
+    /* 수문: 본류 방향(C→E)으로 */
+    var from=isPnp?pE:pC, to=isPnp?pC:pE;
+    var grp=_flowGroup(from,to,mid);
+    var region=out?out.region:'cutoff';
+    var lift=region==='saturation'?1:(region==='active'?0.55:0);
+    var gate=_makeGate(grp,{lift:lift,color:0x7a5b3a});
+    /* 레버: 베이스 수반의 부표(뜬 통) → 막대 → 수문 핸드휠. 베이스 흐름이 세면 부표가 떠올라 문을 든다 */
+    var woodMat=new THREE.MeshStandardMaterial({color:COL_WOOD,roughness:0.85,metalness:0.02});
+    var buoy=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.28,0.22,12),
+             new THREE.MeshStandardMaterial({color:COL_RUBBER,roughness:0.6,metalness:0.1}));
+    buoy.position.set(bEnd.x,bEnd.y-0.05,bEnd.z); _scene.add(buoy);
+    var lever=_tubeBetween(new THREE.Vector3(bEnd.x,bEnd.y+0.1,bEnd.z),
+                           new THREE.Vector3(mid.x,mid.y-TR_BOT+TR_BOT+TR_H+1.4,mid.z),0.04,COL_WOOD_DK,1);
+    _scene.add(lever);
+    /* 레인: 본류(부호 = iC, ports[1]→ports[2] 가 + 인 npn 규약), 베이스(iB, 베이스로 유입이 +) */
+    var mainM={i0:iC,iinf:iC,tau:1e-6,s0:iC,sinf:iC};
+    var baseM={i0:iB,iinf:iB,tau:1e-6,s0:iB,sinf:iB};
+    var laneM=_addLane([pC.clone(),new THREE.Vector3(center.x,pC.y,center.z),mid.clone(),
+                        new THREE.Vector3(center.x,pE.y,center.z),pE.clone()],iC>=0?1:-1,'comp',c,mainM,Math.abs(iC));
+    if(laneM) laneM.staticSigned=iC;
+    var laneB=_addLane([pBase.clone(),bEnd.clone()],iB>=0?1:-1,'comp',c,baseM,Math.abs(iB));
+    if(laneB) laneB.staticSigned=iB;
+    _dynamics.push({kind:'gate',gate:gate,comp:c,target:lift,cur:lift,buoy:buoy,buoyY:bEnd.y-0.05,lift:lift});
+  }
+
+  /* ── 접지 → 배수구 ── */
+  function _buildDrain(c){
+    var pos=_portPos(c,'T');
+    var cc=_grid3D(c.gridX+0.5,c.gridY+0.5,pos.y);
+    _channelSeg(pos,cc);
+    _scene.add(_bendBasin(cc));
+    var grate=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.34,0.06,14),
+              new THREE.MeshStandardMaterial({color:0x2b2f36,roughness:0.7,metalness:0.4}));
+    grate.position.set(cc.x,cc.y-TR_BOT+0.02,cc.z); _scene.add(grate);
+    for(var k=-2;k<=2;k++){
+      var slot=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.02,0.06),
+               new THREE.MeshStandardMaterial({color:0x8a94a0,roughness:0.5,metalness:0.4}));
+      slot.position.set(cc.x,cc.y-TR_BOT+0.06,cc.z+k*0.13); _scene.add(slot);
+    }
+    /* 배수관: 수반 바닥 → 땅속 */
+    var pipe=_tubeBetween(new THREE.Vector3(cc.x,cc.y-TR_BOT-0.05,cc.z),new THREE.Vector3(cc.x,-0.62,cc.z),0.28,0x4a5560,1);
+    _scene.add(pipe);
+  }
+
+  /* ── 레일 라벨 → 급수 저수조 (전위가 있으면 펌프가 채운다) ── */
+  function _buildRail(c){
+    var pos=_portPos(c,'B');
+    var cc=_grid3D(c.gridX+0.5,c.gridY+0.5,pos.y);
+    var rv=App.Netlist.railVoltage(c);
+    _channelSeg(cc,pos);
+    var tankR=0.95, tankBot=-0.45, tankTop=pos.y+0.4;
+    var stone=_stoneMat();
+    var wall=new THREE.Mesh(new THREE.CylinderGeometry(tankR,tankR*1.04,tankTop-tankBot,22,1,true),
+             new THREE.MeshStandardMaterial({color:COL_STONE,roughness:0.9,metalness:0.02,side:THREE.DoubleSide}));
+    wall.position.set(cc.x,(tankTop+tankBot)/2,cc.z); _scene.add(wall);
+    var slab=new THREE.Mesh(new THREE.CylinderGeometry(tankR*1.1,tankR*1.16,0.16,22),stone);
+    slab.position.set(cc.x,tankBot-0.08,cc.z); _scene.add(slab);
+    var water=new THREE.Mesh(new THREE.CylinderGeometry(tankR*0.92,tankR*0.92,pos.y-tankBot+0.02,20),_waterMat(0.85));
+    water.position.set(cc.x,tankBot+(pos.y-tankBot+0.02)/2,cc.z); _scene.add(water);
+    var band=new THREE.Mesh(new THREE.CylinderGeometry(tankR*1.05,tankR*1.05,0.12,22),
+             new THREE.MeshStandardMaterial({color:COL_STEEL,roughness:0.4,metalness:0.35}));
+    band.position.set(cc.x,tankTop-0.08,cc.z); _scene.add(band);
+    if(rv){
+      /* 급수관 + 펌프: 땅에서 저수조 위로 물을 올린다 (레일 전원) */
+      var px=cc.x+tankR+0.55;
+      var pipe=_tubeBetween(new THREE.Vector3(px,-0.5,cc.z),new THREE.Vector3(px,tankTop+0.2,cc.z),0.16,COL_STEEL,1);
+      _scene.add(pipe);
+      var elbow=_tubeBetween(new THREE.Vector3(px,tankTop+0.2,cc.z),new THREE.Vector3(cc.x+tankR*0.4,tankTop+0.2,cc.z),0.16,COL_STEEL,1);
+      _scene.add(elbow);
+      var house=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.6,0.7),
+                new THREE.MeshStandardMaterial({color:COL_PUMP,roughness:0.55,metalness:0.25}));
+      house.position.set(px,-0.2,cc.z); _scene.add(house);
+      _addArrow(new THREE.Vector3(px+0.5,Math.max(0.2,(tankTop-0.5)/2-0.3),cc.z),Math.min(1.6,(tankTop+0.5)*0.5+0.4),0xc8ffd8);
+      /* 급수 레인: 전원 전류 (i_k 는 + 단자로 '들어가는' 전류 → 공급이면 음수) */
+      var I=_signedI(c);
+      var lane=_addLane([new THREE.Vector3(px,-0.4,cc.z),new THREE.Vector3(px,tankTop+0.2,cc.z),
+                         new THREE.Vector3(cc.x+tankR*0.4,tankTop+0.2,cc.z),new THREE.Vector3(cc.x,pos.y,cc.z),pos.clone()],
+                        I<=0?1:-1,'comp',c,_compModel(c),Math.abs(I));
+      if(lane) lane.staticSigned=-I;
+    }
+  }
+
   /* 분기점 → T자(3way) / 十자(4way) 갈림 수로
    *   중앙 허브에서 실제 포트 방향마다 팔(arm)을 뻗어 분기 형상을 만든다. */
   function _buildJunction(c){
@@ -1067,13 +1309,13 @@ App.AnalogyRenderer=(function(){
         case TYPE.INDUCTOR:  _buildInductor(c); break;
         case TYPE.JUNCTION_3:
         case TYPE.JUNCTION_4: _buildJunction(c); break;
-        case TYPE.SWITCH: {
-          /* 비유 모드는 닫힘 상태 — 스위치 자리는 곧은 수로 한 토막 */
-          var ports=App.Geo.getCompPorts(c);
-          var pA=_portPos(c,ports[0]), pB=_portPos(c,ports[1]);
-          if(pA.distanceTo(pB)>0.02){ _scene.add(_troughBetween(pA,pB)); }
-          break;
-        }
+        case TYPE.SWITCH:    _buildSwitch(c); break;
+        case TYPE.BULB:      _buildBulb(c); break;
+        case TYPE.DIODE:     _buildDiode(c); break;
+        case TYPE.NPN:
+        case TYPE.PNP:       _buildBJT(c); break;
+        case TYPE.GROUND:    _buildDrain(c); break;
+        case TYPE.LABEL:     _buildRail(c); break;
       }
       /* 소자 이름·값 라벨 (분기점은 특성값이 없으므로 제외) */
       if(c.type!==TYPE.JUNCTION_3 && c.type!==TYPE.JUNCTION_4){
@@ -1198,6 +1440,12 @@ App.AnalogyRenderer=(function(){
       w.rotor.angle+=w.rotor.omega*dt;
       w.grp.rotation.z=w.rotor.angle;
       w.glow.material.opacity=_playing?_clamp(pNow*0.22,0,0.22):0;
+      /* 전구: 등불 밝기 = 순간 전력 / 정격 (P = I²R) */
+      if(w.lamp){
+        var brt=_playing?_clamp((iNow*iNow*w.R)/w.rated,0,1.3):0;
+        w.lamp.material.emissiveIntensity=brt*1.4;
+        if(w.lampLight) w.lampLight.intensity=brt*1.6;
+      }
 
       /* 물 튀김: 휠이 도는 속도에 비례해 하단(물이 떨어지는 지점)에서 물방울 분출 */
       if(w.splash){
@@ -1233,6 +1481,17 @@ App.AnalogyRenderer=(function(){
         d.rotor.omega+=(tOmL-d.rotor.omega)*_clamp(3.0*dt,0,1);
         d.rotor.angle+=d.rotor.omega*dt;
         d.wheel.rotation.x=d.rotor.angle;
+      } else if(d.kind==='gate'){
+        /* 수문: 목표 개방도로 부드럽게 (스위치 = 0/1, 트랜지스터 = 동작 영역) */
+        d.cur+=(d.target-d.cur)*_clamp(4.0*dt,0,1);
+        d.gate.setLift(d.cur);
+        if(d.buoy) d.buoy.position.y=d.buoyY+0.35*d.cur;
+      } else if(d.kind==='diode'){
+        /* 역류 방지 밸브: 순방향 전류가 흐를 때만 젖혀진다 */
+        var iD=_playing?_branchCurrentModel(d.cur,t):0;
+        var tgt=_playing?((iD>1e-9)?1:0):d.target;
+        d.open+=(tgt-d.open)*_clamp(5.0*dt,0,1);
+        d.pivot.rotation.x=-1.05*d.open;
       } else if(d.kind==='cap'){
         /* 수위 = 충전량 Q(t) ∝ (1 − i_C(t)/i_C0).
          *   낮은 수로 높이(loY, V_C=0)에서 유입 수로 높이(hiY, V_C=V)까지 차오른다. */
@@ -1305,12 +1564,19 @@ App.AnalogyRenderer=(function(){
       case TYPE.INDUCTOR:  { var mh=(c.value||0)*1e3; return (mh>=1?mh.toFixed(mh<10?1:0):mh.toFixed(2))+'mH'; }
       case TYPE.JUNCTION_3: return '3-way';
       case TYPE.JUNCTION_4: return '十 4-way';
+      case TYPE.BULB:      return (c.value||0)+'Ω · '+(c.value2||0)+'W';
+      case TYPE.SWITCH:    return App.Netlist.switchClosed(c,true)?'닫힘':'열림';
+      case TYPE.DIODE:     return 'p-n';
+      case TYPE.NPN: case TYPE.PNP: return 'β='+(c.value||0);
+      case TYPE.GROUND:    return '0V';
+      case TYPE.LABEL:     { var rv=App.Netlist.railVoltage(c); return rv?(rv+'V 공급'):(V!=null?_fmtVoltShort(V):''); }
     }
     return '';
   }
   function _typeKr(c){
     return ({DC_SOURCE:'전원',RESISTOR:'저항',CAPACITOR:'축전기',
-             INDUCTOR:'인덕터',JUNCTION_3:'분기',JUNCTION_4:'분기'})[c.type]||'';
+             INDUCTOR:'인덕터',JUNCTION_3:'분기',JUNCTION_4:'분기',
+             BULB:'전구',SWITCH:'스위치',DIODE:'다이오드',NPN:'npn',PNP:'pnp',GROUND:'접지',LABEL:'레일'})[c.type]||'';
   }
   /* 실시간 물리량 포맷 (#2) — 저항:소비전력, 축전기:전하량, 인덕터:자속쇄교수 NΦ, 전원:공급/흡수전력 */
   function _fmtMetric(c, t){
@@ -1335,6 +1601,22 @@ App.AnalogyRenderer=(function(){
         if(Math.abs(sSrc)>1e-12 && (sSrc>0?1:-1)!==emfSign) label='충전';  // 역기전력=흡수
       }
       return (label==='충전'?'⮇ 충전 ':'⮅ 공급 ')+s;
+    }
+    if(c.type===TYPE.BULB){
+      var ib=iAt(), Rb=Math.max(c.value||0,1e-12), Pb=ib*ib*Rb;
+      var pct=Math.round(_clamp(Pb/Math.max(c.value2||1,1e-6),0,1.5)*100);
+      var xb=Math.abs(Pb);
+      var sb = xb<1e-3?(Pb*1e6).toFixed(1)+'µW' : xb<1?(Pb*1e3).toFixed(1)+'mW' : Pb.toFixed(2)+'W';
+      return 'P = '+sb+' · 밝기 '+pct+'%';
+    }
+    if(c.type===TYPE.DIODE){
+      var od=_compOut(c);
+      return od?(od.region==='forward'?'순방향 도통':'역방향 차단'):'';
+    }
+    if(c.type===TYPE.NPN||c.type===TYPE.PNP){
+      var ob=_compOut(c); if(!ob) return '';
+      var RK={cutoff:'차단',active:'활성',saturation:'포화'};
+      return (RK[ob.region]||ob.region)+' · I_C '+_fmtCurShort(ob.iC);
     }
     if(c.type===TYPE.RESISTOR){
       var i=iAt(), R=Math.max(c.value||0,1e-12);
@@ -1383,7 +1665,8 @@ App.AnalogyRenderer=(function(){
     var name=(c.label&&c.label.trim())?c.label.trim():_typeKr(c);
     var val=_fmtVal(c);
     /* 실시간 물리량을 갖는 소자인지 */
-    var hasMetric=(c.type===TYPE.RESISTOR||c.type===TYPE.CAPACITOR||c.type===TYPE.INDUCTOR||c.type===TYPE.DC_SOURCE);
+    var hasMetric=(c.type===TYPE.RESISTOR||c.type===TYPE.CAPACITOR||c.type===TYPE.INDUCTOR||c.type===TYPE.DC_SOURCE||
+                   c.type===TYPE.BULB||c.type===TYPE.DIODE||c.type===TYPE.NPN||c.type===TYPE.PNP);
     var cv=document.createElement('canvas');
     var pad=14, fs1=40, fs2=36, fs3=34;   // 폰트 키움
     var lines = hasMetric?3:2;

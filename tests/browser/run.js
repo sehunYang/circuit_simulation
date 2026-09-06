@@ -518,6 +518,57 @@ async function inkCount(p,sel,pred){ return p.evaluate((sel,predSrc)=>{const cv=
   await p.evaluate(()=>{ window.App.POE.close&&window.App.POE.close(); });
     await L.mode(p,'edit');
 
+  /* ══ 후속 수정 2 (사용자 보고 4건) ══ */
+  /* 1. 역방향 다이오드: 전류 0 인데 전자가 움직이던 문제 — 실행 모드 전자 픽셀이 없어야 한다 */
+  const diodeC=[{key:'dc',type:'DC_SOURCE',gx:48,gy:50,rot:90,value:12},
+                {key:'d', type:'DIODE',    gx:50,gy:48,rot:0, value:0},
+                {key:'r', type:'RESISTOR', gx:52,gy:50,rot:90,value:1000}];
+  const diodeW=[['dc','L','d','L','V-first'],['d','R','r','L','H-first'],['r','R','dc','R','V-first']];
+  await L.build(p, diodeC, diodeW); await L.focus(p,50.5,49.5,1.6);
+  await L.mode(p,'run'); await L.sleep(1500);
+  /* 전자 = 흰 속 + 검정 테두리 링 → 검정 링 픽셀만 센다 (배지·안내 오버레이 제외) */
+  const fwdPx=await inkCount(p,'#canvas-anim','a>200&&r<70&&g<70&&b<90');
+  const fwdI=await p.evaluate(()=>Math.abs(window.App.State.solverResult.branchCurrents[window.__ids.r]||0));
+  await L.mode(p,'edit');
+  /* 역방향: 다이오드를 180° 돌리고 도선을 반대 포트에 (포트 이름으로 잇기 때문에 회전만으로는 안 바뀐다) */
+  await L.build(p, diodeC.map(c=>c.key==='d'?Object.assign({},c,{rot:180}):c),
+                   [['dc','L','d','R','V-first'],['d','L','r','L','H-first'],['r','R','dc','R','V-first']]); await L.focus(p,50.5,49.5,1.6);
+  await L.mode(p,'run'); await L.sleep(1500);
+  const revPx=await inkCount(p,'#canvas-anim','a>200&&r<70&&g<70&&b<90');
+  const revI=await p.evaluate(()=>Math.abs(window.App.State.solverResult.branchCurrents[window.__ids.r]||0));
+  await L.mode(p,'edit');
+  chk('순방향 다이오드: 11.3 mA, 실행 모드 전자 표시', Math.abs(fwdI-0.0113)<5e-4&&fwdPx>50, JSON.stringify({fwdI,fwdPx}));
+  chk('역방향 다이오드: 전류 ≈ 0 (pA) 이고 전자 픽셀 없음', revI<1e-9&&revPx===0, JSON.stringify({revI,revPx}));
+
+  /* 2. 비유 모드에 새 소자(전구·스위치·다이오드·트랜지스터·접지·레일) — 오류 없이 그려지고 물이 보인다 */
+  for(const exId of ['not','and','transistor']){
+    const errs2=[]; const onErr=e=>errs2.push(e.message); p.on('pageerror',onErr);
+    await p.evaluate((exId)=>{ const P=window.App.POE; P.loadCircuit(P.EXAMPLES.find(e=>e.id===exId));
+      window.App.State.components.forEach(c=>{ if(c.type==='SWITCH'&&c.on===false) c.on=true; }); window.App.Solver.solveNow(); }, exId);
+    await L.mode(p,'analogy'); await L.sleep(1800);
+    await p.evaluate(()=>document.getElementById('analogy-play-btn').click()); await L.sleep(1500);
+    const st=await p.evaluate(()=>{ const cv=document.getElementById('canvas-three'); return {mode:window.App.State.mode, has:!!cv, w:cv&&cv.width}; });
+    /* WebGL 캔버스는 readPixels 대신 스크린샷 픽셀로 판단 */
+    const shotB64=await p.screenshot({encoding:'base64'});
+    const water=await p.evaluate((b64)=>new Promise(res=>{ const im=new Image(); im.onload=()=>{ const cv=document.createElement('canvas'); cv.width=im.width; cv.height=im.height;
+      const c=cv.getContext('2d'); c.drawImage(im,0,0); const d=c.getImageData(0,0,cv.width,cv.height).data; let n=0;
+      for(let i=0;i<d.length;i+=4){ if(d[i+2]>150&&d[i]<90&&d[i+1]>100&&d[i+1]<200) n++; } res(n); }; im.src='data:image/png;base64,'+b64; }), shotB64);
+    p.off('pageerror',onErr);
+    chk('비유 모드 · POE '+exId+': 3D 캔버스 표시·오류 없음·물 픽셀 있음', st.mode==='analogy'&&st.has&&errs2.length===0&&water>500, JSON.stringify({st,errs:errs2,water}));
+    await L.mode(p,'edit');
+  }
+
+  /* 3. POE 회로 재배치: 전지 예제는 딸린 스위치(autoFor) 를 갖고, 레일 예제는 전지 없이 VCC 전위로 돈다 */
+  const poeF2=await p.evaluate(()=>{ const P=window.App.POE, S=window.App.State, out=[];
+    P.EXAMPLES.forEach(ex=>{ P.loadCircuit(ex); const src=S.components.find(c=>c.type==='DC_SOURCE'||c.type==='AC_SOURCE');
+      const autoSw=S.components.find(c=>c.type==='SWITCH'&&c.autoFor); const rails=S.components.filter(c=>c.type==='LABEL'&&window.App.Netlist.railVoltage(c));
+      const sr=window.App.Solver.solve(S.components,S.wires,{closed:true,noWave:true});
+      out.push({id:ex.id, rail:!!ex.circuit.rail, hasSrc:!!src, autoSw:!!(autoSw&&src&&autoSw.autoFor===src.id), rails:rails.length, valid:sr.valid, err:sr.error}); });
+    return out; });
+  poeF2.forEach(r=>{ chk('POE '+r.id+': '+(r.rail?'레일 전원(VCC 전위)·전지 없음':'전지 + 딸린 스위치')+' · 유효',
+      r.valid&&(r.rail?(!r.hasSrc&&r.rails>0):(r.hasSrc&&r.autoSw)), JSON.stringify(r)); });
+  await p.evaluate(()=>{ const S=window.App.State; while(S.components.length) S.removeComponent(S.components[0].id); });
+
   await b.close();
   let fail=0; R.forEach(x=>{ if(!x.ok) fail++; console.log((x.ok?'✓ ':'✗ ')+x.name+(x.ok?'':'   '+x.detail)); });
   console.log('─'.repeat(50)); console.log('검증 '+R.length+'건 / 실패 '+fail+'건'); process.exit(fail?1:0);
