@@ -34,10 +34,10 @@ App.POE=(function(){
       circuit:{
         comps:battery(12,46,48).concat([C('A','BULB',48,46,0,100,1,{label:'A'}), C('ja','JUNCTION_3',50,46),
                C('B','BULB',50,47,90,100,1,{label:'B'}), C('C','BULB',53,47,90,100,1,{label:'C'}),
-               C('jc','JUNCTION_3',50,48,180)]),
+               C('jc','JUNCTION_3',50,49,180)]),   /* 분기점은 전지 행 아래 — 같은 행이면 귀환 도선이 전지를 관통 */
         wires:batteryW.concat([W('sw','L','A','L','V-first'), W('A','R','ja','L'), W('ja','R','C','L','H-first'),
                W('ja','B','B','L'), W('B','R','jc','B'), W('C','R','jc','L','V-first'), W('jc','R','dc','R','H-first')]),
-        center:[49.5,47.5] },
+        center:[49.5,48] },
       question:'같은 전구 세 개. A 는 전지에 직렬, B 와 C 는 서로 병렬입니다. 밝기 순위는?',
       options:[
         {label:'A > B = C', correct:true},
@@ -52,10 +52,10 @@ App.POE=(function(){
       circuit:{
         comps:battery(12,46,49).concat([C('ja','JUNCTION_3',49,46), C('A','BULB',49,47,90,100,1,{label:'A'}),
                C('sw2','SWITCH',52,47,90,0,null,{on:false}), C('B','BULB',52,48,90,100,1,{label:'B'}),
-               C('jc','JUNCTION_3',49,49,180)]),
+               C('jc','JUNCTION_3',49,50,180)]),   /* 분기점은 전지 행 아래 */
         wires:batteryW.concat([W('sw','L','ja','L','V-first'), W('ja','B','A','L'), W('A','R','jc','B'),
                W('ja','R','sw2','L','H-first'), W('sw2','R','B','L'), W('B','R','jc','L','V-first'), W('jc','R','dc','R','H-first')]),
-        center:[49.5,48] },
+        center:[49.5,48.5] },
       question:'전구 A 가 켜져 있습니다. 스위치를 닫아 전구 B 를 A 와 병렬로 추가하면?',
       options:[
         {label:'A 밝기 그대로, 전지 전류는 2배', correct:true},
