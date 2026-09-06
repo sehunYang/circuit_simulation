@@ -26,7 +26,7 @@ function factory(comp, nn){
   function emfAt(ctx){
     if(ctx&&ctx.zeroSources) return 0;
     var V=+comp.value||0;
-    if(comp.type===TYPE.DC_SOURCE) return V;
+    if(comp.type!==TYPE.AC_SOURCE) return V;   /* DC 전원 · 레일 전원 */
     /* AC */
     if(ctx&&ctx.mode==='tran'){ var w=2*Math.PI*(comp.value2||60); return V*Math.cos(w*(ctx.t||0)); }
     return 0;   /* 동작점: 평균 0 */
@@ -39,12 +39,25 @@ function factory(comp, nn){
     return{v:{re:D.V(xr,this.i0)-D.V(xr,this.i1), im:D.V(xi,this.i0)-D.V(xi,this.i1)},
            i:{re:xr[this.k], im:xi[this.k]}};
   };
-  d.emfOP=function(){ return comp.type===TYPE.DC_SOURCE?(+comp.value||0):0; };
+  d.emfOP=function(){ return comp.type!==TYPE.AC_SOURCE?(+comp.value||0):0; };
   d.emfAC=function(){ return comp.type===TYPE.AC_SOURCE?(+comp.value||0):0; };
   d.isSource=true;
   return d;
 }
 D.register(TYPE.DC_SOURCE, factory);
 D.register(TYPE.AC_SOURCE, factory);
+
+/* 레일 전원 — 전위가 있는 레일 라벨 (Netlist.railSource 가 이름당 하나 고른다).
+ *   노드 [라벨 노드, 접지] 사이의 직류 전원. 포트는 B 하나뿐이라 포트 전류는
+ *   B 로 '들어가는' 전류 = 전원 전류 i_k 이다. */
+D.register(TYPE.LABEL, function(comp, nn, nl){
+  if(!nl||!nl.railSource||!nl.railSource[comp.id]) return null;
+  var d=factory(comp, [nn[0], 0]);
+  d.isRail=true;
+  d.portCurrentsOut=function(o){ var r={}; r[this.ports[0]]=o.i; return r; };
+  d.portCurrents=function(x){ return this.portCurrentsOut(this.outputs(x)); };
+  d.portCurrentsAC=function(xr,xi,omega){ var o=this.outputsAC(xr,xi,omega), r={}; r[this.ports[0]]=o.i; return r; };
+  return d;
+});
 
 }());

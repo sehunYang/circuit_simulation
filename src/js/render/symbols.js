@@ -153,7 +153,10 @@ App.Symbols=(function(){
 
   /* 소자 값 → 표시 문자열 (SI 접두어 자동 선택) */
   function _makeLabel(comp){
-    if(comp.type===TYPE.LABEL) return (comp.label&&comp.label.trim())||'VCC';   /* 레일 이름 */
+    if(comp.type===TYPE.LABEL){                                     /* 레일 이름 (+ 전위 = 전원) */
+      var rv=App.Netlist.railVoltage(comp);
+      return App.Netlist.labelName(comp)+(rv?' '+(Math.abs(rv)%1?rv.toFixed(1):rv)+' V':'');
+    }
     if(comp.type===TYPE.NPN) return 'npn';
     if(comp.type===TYPE.PNP) return 'pnp';
     if(comp.type===TYPE.DIODE||comp.type===TYPE.SWITCH||comp.type===TYPE.GROUND) return '';
@@ -190,7 +193,7 @@ App.Symbols=(function(){
    *   상태는 App.State.mode 로 판단한다 (드로어는 소자를 모른다). */
   function drawSwitch(ctx,cx,cy,r,opts){
     var comp=opts&&opts.comp;
-    var closed=!!(App.State&&App.State.mode&&App.State.mode!=='edit') && !(comp&&comp.on===false);
+    var closed=App.Netlist.switchClosed(comp||{}, !!(App.State&&App.State.mode&&App.State.mode!=='edit'));
     var a=cx-r*.42, b=cx+r*.42, dot=r*.07;
     ctx.beginPath();
     ctx.moveTo(cx-r,cy); ctx.lineTo(a,cy);            // 좌측 단자선

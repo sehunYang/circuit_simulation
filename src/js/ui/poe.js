@@ -120,7 +120,7 @@ App.POE=(function(){
         center:[46,47.5], rail:true },
       question:'입력 A(스위치 닫힘 = 1)에 따라 출력 전구는? 진리표의 예측 칸을 채우세요.',
       options:[{label:'진리표를 채웠습니다', correct:true}],
-      observe:'실행 모드에서 스위치 A 를 클릭하며 출력 전구를 보세요. 진리표의 "확인"을 누르면 회로가 네 경우를 풀어 채웁니다.',
+      observe:'실행 모드에서 스위치 A 를 클릭하며 출력 전구를 보세요. 아래 진리표의 관찰 칸은 회로가 두 경우를 풀어 채운 값입니다.',
       explain:'입력이 1 이면 베이스 전류가 흘러 트랜지스터가 켜지고(포화) 컬렉터 전압이 0 V 근처로 떨어져 전구가 꺼집니다. 입력이 0 이면 트랜지스터가 꺼져 풀업 저항을 통해 컬렉터가 5 V 로 올라가 전구가 켜집니다 — 입력을 뒤집는 NOT.' },
 
     { id:'and', title:'논리 회로 — AND 게이트 (다이오드)', level:'심화', truth:{inputs:['swA','swB'], output:'out', fn:function(a,b){return (a&&b)?1:0;}},
@@ -138,7 +138,7 @@ App.POE=(function(){
         center:[47,47.5], rail:true },
       question:'두 입력 A, B (스위치 닫힘 = 1). 출력 전구는 언제 켜질까요? 진리표를 예측하세요.',
       options:[{label:'진리표를 채웠습니다', correct:true}],
-      observe:'스위치 A·B 를 클릭해 네 조합을 만들어 보세요. 다이오드를 클릭하면 순방향/역방향 상태가 보입니다.',
+      observe:'스위치 A·B 를 클릭해 네 조합을 만들어 보세요. 다이오드를 클릭하면 순방향/역방향 상태가 보입니다. 아래 관찰 칸은 회로가 네 조합을 풀어 채운 값입니다.',
       explain:'출력은 풀업 저항으로 5 V 에 매달려 있습니다. 어느 입력이라도 0(스위치 열림 → 풀다운 저항이 0 V 로)이면 그 다이오드가 순방향이 되어 출력을 0.7 V 로 끌어내립니다. 두 입력이 모두 1 이어야 두 다이오드가 다 역방향이 되어 출력이 5 V 로 남습니다 — AND.' },
 
     { id:'or', title:'논리 회로 — OR 게이트 (다이오드)', level:'심화', truth:{inputs:['swA','swB'], output:'out', fn:function(a,b){return (a||b)?1:0;}},
@@ -154,7 +154,7 @@ App.POE=(function(){
         center:[47,47.5], rail:true },
       question:'두 입력 A, B (스위치 닫힘 = 1). 출력 전구는 언제 켜질까요? 진리표를 예측하세요.',
       options:[{label:'진리표를 채웠습니다', correct:true}],
-      observe:'스위치 A·B 를 클릭해 네 조합을 만들어 보세요.',
+      observe:'스위치 A·B 를 클릭해 네 조합을 만들어 보세요. 아래 관찰 칸은 회로가 네 조합을 풀어 채운 값입니다.',
       explain:'어느 입력이든 1 이면 그 다이오드가 순방향이 되어 출력 노드를 5 V − 0.7 V 로 끌어올립니다. 두 입력이 모두 0 이면 아무 다이오드도 도통하지 않아 풀다운 저항이 출력을 0 V 로 둡니다 — OR.' },
   ];
 
@@ -258,7 +258,7 @@ App.POE=(function(){
       _body.appendChild(opts);
       var go=btn('관찰하기 →','poe-primary',function(){
         if(_picked==null&&!ex.truth){ showErrorToast('먼저 예측을 고르세요',1200); return; }
-        if(ex.truth&&!ex._truthPred){ showErrorToast('진리표의 예측 칸을 먼저 채우세요',1500); return; }
+        if(ex.truth&&!truthPredComplete(ex)){ showErrorToast('진리표의 예측 칸(?)을 모두 클릭해 0/1 로 채우세요',1800); return; }
         if(_picked==null) _picked=0;
         _step=1; observe(ex); renderStep();
       });
@@ -297,7 +297,7 @@ App.POE=(function(){
 
   function isCorrect(ex){
     if(ex.truth){
-      if(!ex._truthPred||!ex._truthObs) return false;
+      if(!truthPredComplete(ex)||!ex._truthObs) return false;
       return ex._truthObs.every(function(r,i){ return ex._truthPred[i]===r.out; });
     }
     var o=ex.options[_picked]; return !!(o&&o.correct);
@@ -322,7 +322,10 @@ App.POE=(function(){
       inp.forEach(function(v){ tr.appendChild(h('td','',String(v))); });
       var pv=ex._truthPred[i];
       var tdp=h('td','poe-cell'+(mode==='predict'?' click':''), pv==null?'?':String(pv));
-      if(mode==='predict') tdp.addEventListener('click',function(e){ e.stopPropagation(); ex._truthPred[i]=(pv==null?1:(pv===1?0:1)); renderStep(); });
+      if(mode==='predict'){
+        tdp.title='클릭해서 0 / 1 바꾸기';
+        tdp.addEventListener('click',function(e){ e.stopPropagation(); ex._truthPred[i]=(pv==null?1:(pv===1?0:1)); renderStep(); });
+      }
       tr.appendChild(tdp);
       if(mode!=='predict'){
         var ov=ex._truthObs?ex._truthObs[i].out:null;
@@ -331,10 +334,9 @@ App.POE=(function(){
       }
       tbl.appendChild(tr);
     });
-    if(mode==='predict'&&ex._truthPred.some(function(v){return v==null;})) ex._truthPred=ex._truthPred.some(function(v){return v!=null;})?ex._truthPred:null;
-    if(ex._truthPred&&ex._truthPred.every(function(v){return v!=null;})) ex._truthPredComplete=true;
     return tbl;
   }
+  function truthPredComplete(ex){ return !!(ex._truthPred&&ex._truthPred.every(function(v){return v!=null;})); }
 
   function exportCSV(){
     if(!_results.length){ showErrorToast('기록된 결과가 없습니다',1200); return; }

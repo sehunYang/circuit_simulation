@@ -452,6 +452,72 @@ async function inkCount(p,sel,pred){ return p.evaluate((sel,predSrc)=>{const cv=
   chk('실행 모드에서 스위치 클릭 → 닫힘, 전지 전류 2배 (120→240mA)', afterE.on===true&&Math.abs(togE.srcI-0.12)<1e-3&&Math.abs(afterE.srcI-0.24)<1e-3, JSON.stringify({before:togE.srcI, afterE}));
     await L.mode(p,'edit');
 
+  /* ══ 후속 수정 (사용자 보고 3건) ══ */
+  /* 1. 편집 모드 속성 패널의 스위치 열기/닫기 버튼 — 자동 스위치를 닫으면 편집 중에도 닫힌 회로 */
+  await p.evaluate(()=>{
+    const S=window.App.State; while(S.components.length) S.removeComponent(S.components[0].id);
+    window.App.Main.addComponentCenter(SIDEBAR_ITEMS.find(i=>i.type==='DC_SOURCE'));   /* 전원 + 자동 스위치 */
+    const src=S.components.find(c=>c.type==='DC_SOURCE'), sw=S.components.find(c=>c.type==='SWITCH');
+    const res={id:S.genId(),type:'RESISTOR',gridX:src.gridX+2,gridY:src.gridY+2,rotation:0,value:200,value2:null,label:''};
+    S.addComponent(res);
+    S.addWire({id:S.genId(),fromId:sw.id,fromPort:'L',toId:res.id,toPort:'L',direction:'V-first'});
+    S.addWire({id:S.genId(),fromId:res.id,fromPort:'R',toId:src.id,toPort:'R',direction:'V-first'});
+    window.App.Events.emit('state:changed'); window.App.Solver.solveNow();
+  });
+  await L.sleep(300);
+  const swF=await p.evaluate(async()=>{
+    const S=window.App.State, sw=S.components.find(c=>c.type==='SWITCH'), R=S.components.find(c=>c.type==='RESISTOR');
+    S.selectedId=sw.id; window.App.PropPanel.show(sw.id);
+    const txt=()=>document.getElementById('prop-content').textContent;
+    const btnOf=(re)=>[...document.querySelectorAll('#prop-content button')].find(b=>re.test(b.textContent));
+    const before={mode:S.mode, on:sw.on, two:/닫으면/.test(txt()), btn:!!btnOf(/열림 → 닫기/), I:Math.abs(S.solverResult.branchCurrents[R.id]||0)};
+    btnOf(/열림 → 닫기/).click(); await new Promise(r=>setTimeout(r,250));
+    const closed={on:sw.on, two:/닫으면/.test(txt()), I:Math.abs(S.solverResult.branchCurrents[R.id]||0), btn:!!btnOf(/닫힘 → 열기/), auto:!!btnOf(/^자동$/)};
+    btnOf(/^자동$/).click(); await new Promise(r=>setTimeout(r,250));
+    const reset={on:sw.on, two:/닫으면/.test(txt()), I:Math.abs(S.solverResult.branchCurrents[R.id]||0)};
+    return {before, closed, reset};
+  });
+  chk('편집 패널: 자동 스위치 = 열림, "열림 → 닫기" 버튼과 열림/닫으면 두 열', swF.before.mode==='edit'&&swF.before.on==null&&swF.before.btn&&swF.before.two&&swF.before.I<1e-9, JSON.stringify(swF.before));
+  chk('편집 패널: 닫기 → 편집 중에도 닫힌 회로 60mA, 단일 열, "닫힘 → 열기"+"자동"', swF.closed.on===true&&!swF.closed.two&&Math.abs(swF.closed.I-0.06)<1e-4&&swF.closed.btn&&swF.closed.auto, JSON.stringify(swF.closed));
+  chk('편집 패널: 자동 → 다시 열림 (0 mA, 두 열)', swF.reset.on==null&&swF.reset.two&&swF.reset.I<1e-9, JSON.stringify(swF.reset));
+
+  /* 2. VCC 라벨에 전위 → 접지 기준 전원 (전지 없이) */
+  await L.build(p, [{key:'vcc',type:'LABEL',gx:50,gy:48,rot:0,value:5,label:'VCC'},
+                    {key:'r',type:'RESISTOR',gx:50,gy:50,rot:90,value:1000},
+                    {key:'g',type:'GROUND',gx:50,gy:52,rot:0,value:0}],
+                   [['vcc','B','r','L','V-first'],['r','R','g','T','V-first']]);
+  await L.select(p,'vcc');
+  const railF=await rows(p);
+  const railV=await p.evaluate(()=>{ const S=window.App.State, sr=S.solverResult; return {valid:sr.valid, err:sr.error, I:Math.abs(sr.branchCurrents[window.__ids.r]||0), warn:(sr.warnings||[]).length, txt:document.getElementById('prop-content').textContent}; });
+  chk('VCC 5V 라벨 + R 1k + GND: 전지 없이 유효, 5 mA, 경고 없음', railV.valid&&Math.abs(railV.I-0.005)<1e-6&&railV.warn===0, JSON.stringify({valid:railV.valid,err:railV.err,I:railV.I,warn:railV.warn}));
+  chk('라벨 패널: 전위 필드 5.0 V · 전위 5 V · 공급 전류 5 mA', /5\.0 V/.test(railF['전위 (V)']||'')&&/5\.0000 V/.test(railF['전위']||'')&&/5\.000 mA/.test(railF['공급 전류']||''), JSON.stringify(railF));
+
+  /* 3. POE 진리표 예제: 예측 칸 클릭으로 채우고 관찰 단계로 진행 */
+  const truthF=await p.evaluate(async()=>{
+    const P=window.App.POE; P.open(); const ex=P.EXAMPLES.find(e=>e.id==='not'); P.start(ex);
+    const body=document.getElementById('poe-body');
+    const go=()=>[...body.querySelectorAll('.poe-primary')].find(b=>/관찰하기/.test(b.textContent));
+    go().click(); await new Promise(r=>setTimeout(r,100));
+    const blocked=!!go();                                   /* 아직 예측 단계 */
+    const cells=()=>body.querySelectorAll('td.poe-cell.click');
+    const n0=cells().length;
+    cells()[0].click(); await new Promise(r=>setTimeout(r,50));      /* ? → 1 */
+    cells()[1].click(); await new Promise(r=>setTimeout(r,50));      /* ? → 1 */
+    cells()[1].click(); await new Promise(r=>setTimeout(r,50));      /* 1 → 0 */
+    const pred=[...cells()].map(td=>td.textContent);
+    go().click(); await new Promise(r=>setTimeout(r,400));
+    const observed=[...body.querySelectorAll('tr')].slice(1).map(tr=>[...tr.children].map(td=>td.textContent).join(''));
+    const step1=!go()&&!!body.querySelector('.poe-primary');
+    const explain=[...body.querySelectorAll('.poe-primary')].find(b=>/설명 보기/.test(b.textContent)); explain.click(); await new Promise(r=>setTimeout(r,50));
+    const verdict=body.querySelector('.poe-verdict')&&body.querySelector('.poe-verdict').textContent;
+    return {blocked, n0, pred, observed, step1, mode:window.App.State.mode, verdict};
+  });
+  chk('POE NOT: 빈 진리표로는 관찰 단계로 못 넘어감, 예측 칸 2개 클릭 가능', truthF.blocked&&truthF.n0===2, JSON.stringify(truthF));
+  chk('POE NOT: 클릭으로 예측 1·0 채움 → 관찰 단계(실행 모드) 진입, 관찰 칸 채워짐', truthF.pred.join('')==='10'&&truthF.step1&&truthF.mode==='run'&&truthF.observed.join('|')==='011|100', JSON.stringify(truthF));
+  chk('POE NOT: 예측 = 관찰 → "맞았습니다"', /맞았습니다/.test(truthF.verdict||''), truthF.verdict||'');
+  await p.evaluate(()=>{ window.App.POE.close&&window.App.POE.close(); });
+    await L.mode(p,'edit');
+
   await b.close();
   let fail=0; R.forEach(x=>{ if(!x.ok) fail++; console.log((x.ok?'✓ ':'✗ ')+x.name+(x.ok?'':'   '+x.detail)); });
   console.log('─'.repeat(50)); console.log('검증 '+R.length+'건 / 실패 '+fail+'건'); process.exit(fail?1:0);

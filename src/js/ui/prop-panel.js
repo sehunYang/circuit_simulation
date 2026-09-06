@@ -28,6 +28,8 @@ App.PropPanel=(function(){
   var RINT={label:'내부저항', key:'rint', unit:'Ω', ds:1, df:2, min:0, max:1e6, step:0.1, optional:true};
   var FIELDS={
     DC_SOURCE:[{label:'전압',    key:'value', unit:'V',  ds:1,   df:1, min:0,     max:9999, step:1}, RINT],
+    /* 레일 라벨: 전위 0 = 연결 라벨만, 0 이 아니면 접지 기준 직류 전원 (같은 이름은 함께 바뀐다) */
+    LABEL:    [{label:'전위',    key:'value', unit:'V',  ds:1,   df:1, min:-999,  max:999,  step:1, syncName:true}],
     AC_SOURCE:[{label:'전압',    key:'value', unit:'V',  ds:1,   df:1, min:0,     max:9999, step:1},
                {label:'주파수', key:'value2',unit:'Hz', ds:1,   df:0, min:1,     max:1e6,  step:1}, RINT],
     RESISTOR: [{label:'저항',   key:'value', unit:'Ω',  ds:1,   df:0, min:0.001, max:1e9,  step:1}],
@@ -115,6 +117,7 @@ App.PropPanel=(function(){
       comp.label=this.value.trim();
       rotInfo.textContent=comp.rotation+'°';
       App.Events.emit('state:changed');
+      if(comp.type===TYPE.LABEL) show(comp.id);   /* 전위 안내·측정값 갱신 */
     });
     lblInp.addEventListener('pointerdown',function(e){e.stopPropagation();});
     lblRow.appendChild(lblKey);lblRow.appendChild(lblInp);
@@ -150,6 +153,11 @@ App.PropPanel=(function(){
           onConfirm: function(v){
             var clamped=Math.max(f.min||0, f.max?Math.min(f.max,v):v);
             comp[f.key]=clamped/f.ds;
+            /* 같은 이름의 레일 라벨은 한 노드이므로 전위도 하나 */
+            if(f.syncName){
+              var nm=App.Netlist.labelName(comp);
+              App.State.components.forEach(function(c2){ if(c2.type===comp.type&&c2.id!==comp.id&&App.Netlist.labelName(c2)===nm) c2[f.key]=comp[f.key]; });
+            }
             _refreshValBtn();
             App.Events.emit('state:changed');
           }
@@ -164,6 +172,44 @@ App.PropPanel=(function(){
       var ports=App.Geo.getCompPorts(comp);
       var connCount=ports.reduce(function(n,p){return n+App.State.getPortWires(comp.id,p).length;},0);
       _content.appendChild(_row('연결',connCount>0?connCount+'개 도선':'없음'));
+    }
+
+    /* ── 스위치 개폐 ──
+     *   comp.on: undefined = 자동(편집 열림 · 실행 닫힘), true = 닫힘 유지, false = 열림 유지.
+     *   편집 모드에서도 여기서 열고 닫을 수 있다 — 자동 스위치를 닫으면 편집 중에도 닫힌 회로가 풀린다. */
+    if(comp.type===TYPE.SWITCH){
+      var swClosed=App.Netlist.switchClosed(comp, App.State.mode!=='edit');
+      var swRow=document.createElement('div');swRow.className='pp-row';
+      var swKey=document.createElement('span');swKey.className='pp-key';swKey.textContent='스위치';
+      var swVal=document.createElement('span');swVal.className='pp-val';swVal.style.cssText='display:flex;gap:4px;justify-content:flex-end';
+      var swBtn=_btn(swClosed?'닫힘 → 열기':'열림 → 닫기','pp-btn-rotate',function(){
+        comp.on=!swClosed;
+        App.Events.emit('state:changed'); App.Solver.solveNow(); show(comp.id);
+      });
+      swBtn.style.cssText='flex:0 0 auto;padding:2px 8px';
+      swVal.appendChild(swBtn);
+      if(comp.on!=null){
+        var autoBtn=_btn('자동','pp-btn-rotate',function(){
+          delete comp.on;
+          App.Events.emit('state:changed'); App.Solver.solveNow(); show(comp.id);
+        });
+        autoBtn.title='편집 모드에서 열림, 실행 모드에서 닫힘';
+        autoBtn.style.cssText='flex:0 0 auto;padding:2px 8px;opacity:.8';
+        swVal.appendChild(autoBtn);
+      }
+      swRow.appendChild(swKey);swRow.appendChild(swVal);_content.appendChild(swRow);
+      var swHint=document.createElement('div');
+      swHint.style.cssText='color:var(--text-dim);font-size:9px;text-align:right;margin:-4px 0 6px';
+      swHint.textContent=comp.on==null?'자동: 편집 열림 · 실행 닫힘':(comp.on?'닫힘 유지 (편집 중에도 닫힘)':'열림 유지 (실행 중에도 열림)');
+      _content.appendChild(swHint);
+    }
+    /* ── 레일 라벨 안내 ── */
+    if(comp.type===TYPE.LABEL){
+      var rv=App.Netlist.railVoltage(comp);
+      var lhint=document.createElement('div');
+      lhint.style.cssText='color:var(--text-dim);font-size:9px;text-align:right;margin:-4px 0 6px';
+      lhint.textContent=rv?('접지(GND) 기준 '+rv+' V 전원 — 같은 이름 '+App.Netlist.labelName(comp)+' 은 한 노드'):('0 V = 연결 라벨만 (같은 이름 = 같은 노드) · 전위를 주면 전원');
+      _content.appendChild(lhint);
     }
 
     /* ── 측정값 ──
@@ -289,13 +335,19 @@ App.PropPanel=(function(){
     if(comp.type===TYPE.GROUND||comp.type===TYPE.LABEL){
       var nd=cn[comp.id]?cn[comp.id][0]:null;
       push('전위', nd!=null?_fmtVoltage(sr.nodeVoltages[nd]||0):'—');
+      /* 레일 전원: 이 라벨이 공급하는 전류·전력 (이름당 첫 라벨만 스탬프) */
+      if(comp.type===TYPE.LABEL&&App.Netlist.railVoltage(comp)&&sr.branchCurrents[comp.id]!=null){
+        var Ir=sr.branchCurrents[comp.id];
+        push('공급 전류', _fmtCurrent(Math.abs(Ir)));
+        push('공급 전력', _fmtPower(Math.abs(Ir*App.Netlist.railVoltage(comp))));
+      }
       return rows;
     }
     if(comp.type===TYPE.JUNCTION_3||comp.type===TYPE.JUNCTION_4) return rows;
     var I=sr.branchCurrents[comp.id], V=sr.componentVoltages[comp.id];
     var isAC=!!(sr.acPhasor);
     if(comp.type===TYPE.SWITCH){
-      var closedSw=sr.switchState==='closed';
+      var closedSw=App.Netlist.switchClosed(comp, sr.switchState==='closed');
       push('상태', _makeBadge(closedSw?'닫힘':'열림', ''));
       push('전류', _fmtCurrent(I));
       push('양단 전압', _fmtVoltage(V));

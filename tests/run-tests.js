@@ -1073,6 +1073,57 @@ async function main(){
     approx('스위치 전류 0.12', Math.abs(sr.branchCurrents[SW.id]), 0.12, 1e-6);
   })();
 
+  /* ── NL-5: 레일 전원 — 전위가 있는 VCC 라벨은 접지 기준 직류 전원 (별도 전지 없이) ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var L=c.add('LABEL',5), R=c.add('RESISTOR',1000), G=c.add('GROUND',0); L.label='VCC';
+    var w1=c.wire(L,'B',R,'L'), w2=c.wire(R,'R',G,'T');
+    var sr=await solveCircuit(sb,c);
+    scenario('NL-5 레일 전원: VCC=5V 라벨 → R 1k → GND = 5 mA');
+    check('유효', sr.valid, sr.error);
+    approx('I_R=5mA', Math.abs(sr.branchCurrents[R.id]), 0.005, 1e-6);
+    approx('VCC 노드 전위 5V', sr.nodeVoltages[sr.componentNodes[L.id][0]], 5, 1e-9);
+    approx('라벨 공급 전류 5mA', Math.abs(sr.branchCurrents[L.id]), 0.005, 1e-6);
+    [w1,w2].forEach(function(w){ approx('도선 '+w.id+' = 5mA', Math.abs(sr.wireCurrents[w.id]), 0.005, 1e-6); });
+    check('짝 없음 경고 없음 (전원 라벨)', !sr.warnings.length, JSON.stringify(sr.warnings));
+    /* 같은 이름 두 개(둘 다 5V) → 한 번만 스탬프, 병렬 가지 */
+    var L2=c.add('LABEL',5), R2=c.add('RESISTOR',1000), G2=c.add('GROUND',0); L2.label='VCC';
+    c.wire(L2,'B',R2,'L'); c.wire(R2,'R',G2,'T');
+    var sr2=await solveCircuit(sb,c);
+    check('두 라벨 유효', sr2.valid, sr2.error);
+    approx('두 가지 각 5mA', Math.abs(sr2.branchCurrents[R2.id]), 0.005, 1e-6);
+    approx('첫 라벨이 총 10mA 공급', Math.abs(sr2.branchCurrents[L.id]), 0.010, 1e-6);
+    /* 음의 레일 (VEE = −5 V) */
+    var c3=circuit(sb); var Lm=c3.add('LABEL',-5), Rm=c3.add('RESISTOR',1000), Gm=c3.add('GROUND',0); Lm.label='VEE';
+    c3.wire(Lm,'B',Rm,'L'); c3.wire(Rm,'R',Gm,'T');
+    var sr3=await solveCircuit(sb,c3);
+    approx('VEE=−5V 노드 전위', sr3.nodeVoltages[sr3.componentNodes[Lm.id][0]], -5, 1e-9);
+    /* 접지 없이 레일 전원 → 오류 */
+    var c4=circuit(sb); var L4=c4.add('LABEL',5), R4=c4.add('RESISTOR',1000), L5=c4.add('LABEL',0); L4.label='VCC'; L5.label='X';
+    c4.wire(L4,'B',R4,'L'); c4.wire(R4,'R',L5,'B');
+    var sr4=await solveCircuit(sb,c4);
+    expectError('접지 없는 레일 전원 → 오류', sr4, '접지');
+  })();
+
+  /* ── NL-6: 스위치 상태 지정 — on=true 는 열림 뷰에서도 닫힘, on=false 는 닫힘 뷰에서도 열림 ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('DC_SOURCE',12), SW=c.add('SWITCH',0), R=c.add('RESISTOR',100);
+    c.wire(V,'L',SW,'R'); c.wire(SW,'L',R,'L'); c.wire(R,'R',V,'R');
+    scenario('NL-6 스위치 on 지정: 닫힘 유지 / 열림 유지 / 자동');
+    SW.on=true;
+    var srO=sb.App.Solver.solve(c.comps,c.wires,{closed:false});
+    approx('on=true · 열림 뷰에서도 120mA', Math.abs(srO.branchCurrents[R.id]), 0.12, 1e-6);
+    check('on 지정이면 hasSwitches=false (두 뷰 동일)', srO.hasSwitches===false&&srO.open===srO.closed);
+    SW.on=false;
+    var srC=sb.App.Solver.solve(c.comps,c.wires,{closed:true});
+    approx('on=false · 닫힘 뷰에서도 0', Math.abs(srC.branchCurrents[R.id]), 0, 0, 1e-9);
+    delete SW.on;
+    var srA=sb.App.Solver.solve(c.comps,c.wires,{closed:false});
+    check('자동: 열림 0 / 닫으면 120mA', Math.abs(srA.branchCurrents[R.id])<1e-9&&Math.abs(srA.closed.branchCurrents[R.id]-0.12)<1e-6||Math.abs(Math.abs(srA.closed.branchCurrents[R.id])-0.12)<1e-6);
+    check('자동이면 hasSwitches=true', srA.hasSwitches===true);
+  })();
+
   /* ════════════ 결과 출력 ════════════ */
   var totalChecks=0, totalFail=0, failScen=0;
   console.log('');

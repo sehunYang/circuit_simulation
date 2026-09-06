@@ -112,7 +112,8 @@ App.Solver=(function(){
     opts=opts||{};
     var wantClosed=opts.closed!==false;
     if(!comps.length) return _empty();
-    var hasSwitches=comps.some(function(c){return c.type===TYPE.SWITCH;});
+    /* 상태가 모드에 따라 달라지는 스위치(on 미지정)가 있을 때만 두 뷰가 다르다 */
+    var hasSwitches=comps.some(function(c){return c.type===TYPE.SWITCH&&c.on==null;});
     var closedView=analyze(comps, wires, true, opts);
     closedView.switchState='closed';
     var openView=hasSwitches?analyze(comps, wires, false, opts):closedView;

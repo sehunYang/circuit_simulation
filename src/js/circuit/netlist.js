@@ -13,6 +13,7 @@ var App=window.App;
  *     2) 분기점(JUNCTION)의 모든 포트끼리
  *     3) 접지(GROUND) 포트 전부 → 하나의 접지 노드
  *     4) 같은 이름의 레일 라벨(LABEL) 포트끼리  (회로이론 표기)
+ *        — 전위(value)가 0 이 아닌 라벨은 접지 기준 이상 직류 전원 (railSource)
  *     5) 스위치: opts.closed 가 참이면 양 포트 병합(닫힘), 거짓이면 그대로(열림)
  *
  *   기준 노드(0): 접지가 있으면 접지, 없으면 마지막 전원의 음극(둘째 포트).
@@ -83,13 +84,23 @@ App.Netlist=(function(){
       } else if(c.type===TYPE.GROUND){
         if(groundSlot==null) groundSlot=s0; else uf.union(groundSlot,s0);
       } else if(c.type===TYPE.LABEL){
-        var name=(c.label&&c.label.trim())||'VCC';
+        var name=labelName(c);
         if(labelSlot[name]==null) labelSlot[name]=s0; else uf.union(labelSlot[name],s0);
       } else if(c.type===TYPE.SWITCH){
-        /* comp.on === false 인 스위치(논리 입력 0)는 실행 모드에서도 열려 있다 */
-        if(closed && c.on!==false){ uf.union(s0, slotOf[c.id][ports[1]]); passthrough[c.id]=true; }
+        if(switchClosed(c, closed)){ uf.union(s0, slotOf[c.id][ports[1]]); passthrough[c.id]=true; }
       }
     });
+
+    /* 레일 전원: 전위가 0 이 아닌 라벨은 접지 기준의 이상 직류 전원이다.
+     *   같은 이름은 한 노드이므로 이름당 한 번만 스탬프한다 (railSource 에 첫 라벨). */
+    var railSource={}, railSeen={}, hasRail=false;
+    comps.forEach(function(c){
+      if(c.type!==TYPE.LABEL||!railVoltage(c)) return;
+      var nm=labelName(c);
+      if(railSeen[nm]) return;
+      railSeen[nm]=true; railSource[c.id]=true; hasRail=true;
+    });
+    if(hasRail&&groundSlot==null) return fail('레일 전위를 쓰려면 접지(GND)가 있어야 합니다');
 
     /* 전원 · 기준 노드 */
     var hasDC=false, hasAC=false, groundRoot=null;
@@ -100,6 +111,7 @@ App.Netlist=(function(){
       if(groundSlot==null) groundRoot=uf.find(slotOf[c.id][ports[1]]);
     });
     if(groundSlot!=null) groundRoot=uf.find(groundSlot);
+    if(hasRail) hasDC=true;
     if(!hasDC&&!hasAC) return fail('전원이 없습니다');
 
     /* 노드 번호 부여 (접지 = 0) */
@@ -154,15 +166,15 @@ App.Netlist=(function(){
       islands.push({nodes:nodes, hasSource:false});
     }
     comps.forEach(function(c){
-      if(!isSource(c)) return;
+      if(!isSource(c)&&!railSource[c.id]) return;
       var nn=compNodes[c.id];
       islands[islandOf[nn[0]]].hasSource=true; islands[islandOf[nn[1]]].hasSource=true;
     });
     var warnings=[];
     /* 짝이 없는 레일 라벨 — 같은 이름이 하나뿐이면 어디에도 이어지지 않는다 */
     var labelCount={};
-    comps.forEach(function(c){ if(c.type===TYPE.LABEL){ var nm=(c.label&&c.label.trim())||'VCC'; labelCount[nm]=(labelCount[nm]||0)+1; } });
-    Object.keys(labelCount).forEach(function(nm){ if(labelCount[nm]===1) warnings.push('레일 라벨 '+nm+' 은 짝이 없습니다 — 같은 이름의 라벨이 하나 더 있어야 이어집니다'); });
+    comps.forEach(function(c){ if(c.type===TYPE.LABEL){ var nm=labelName(c); labelCount[nm]=(labelCount[nm]||0)+1; } });
+    Object.keys(labelCount).forEach(function(nm){ if(labelCount[nm]===1&&!railSeen[nm]) warnings.push('레일 라벨 '+nm+' 은 짝이 없습니다 — 같은 이름의 라벨을 하나 더 두거나, 전위를 주어 전원으로 쓰세요'); });
     var dead=islands.filter(function(is){return !is.hasSource;});
     if(dead.length){
       var deadComps=0;
@@ -172,12 +184,20 @@ App.Netlist=(function(){
 
     return{valid:true,error:null,warnings:warnings,
            nodeCount:nodeCount,groundNode:0,
-           compNodes:compNodes,portNode:portNode,
+           compNodes:compNodes,portNode:portNode,railSource:railSource,
            hasAC:hasAC,hasDC:hasDC,closed:closed,passthrough:passthrough,
            islands:islands,islandOf:islandOf,comps:comps,wires:wires};
   }
 
-  return{build:build, portsOf:portsOf, isSource:isSource, isJunction:isJunction};
+  /* 스위치 상태 — comp.on:
+   *   undefined = 자동 (편집 열림 · 실행 닫힘),  true = 닫힘 유지,  false = 열림 유지 */
+  function switchClosed(c, closedMode){ return c.on===true || (!!closedMode && c.on!==false); }
+  function labelName(c){ return (c.label&&c.label.trim())||'VCC'; }
+  /* 레일 라벨의 전위 (0 = 연결 라벨만) */
+  function railVoltage(c){ var v=+c.value||0; return isFinite(v)?v:0; }
+
+  return{build:build, portsOf:portsOf, isSource:isSource, isJunction:isJunction,
+         switchClosed:switchClosed, labelName:labelName, railVoltage:railVoltage};
 })();
 
 /* 하위 호환 — 예전 이름 */

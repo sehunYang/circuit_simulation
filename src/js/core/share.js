@@ -40,7 +40,7 @@ App.Share=(function(){
       var comps=d.c.map(function(o){
         var c={id:App.State.genId(),type:o.t,gridX:+o.x||0,gridY:+o.y||0,rotation:+o.r||0,
                value:(o.v!=null?o.v:0),value2:(o.w!=null?o.w:null),label:o.l||''};
-        if(o.i!=null) c.rint=o.i; if(o.o===false) c.on=false;
+        if(o.i!=null) c.rint=o.i; if(o.o===false||o.o===true) c.on=o.o;
         if(o.a!=null) c._autoIdx=o.a;
         return c;
       });
