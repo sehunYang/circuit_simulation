@@ -15,12 +15,21 @@ var App=window.App;
 App.RunRenderer=(function(){
 
   /* ── 시각화 튜닝 상수 ── */
-  var ELECTRON_DENSITY_SCALE = 8;    // 전류 크기 → 파티클 수 배율
-  var ELECTRON_SPEED_SCALE   = 0.6;  // (예약)
+  var ELECTRON_SPACING_MAX   = 34;   // 최대 전류 도선의 전자 간격 (px) — 전류가 작을수록 성김
   var ELECTRON_SPEED_MIN     = 8;    // 최소 속도 (px/s)
   var ELECTRON_SPEED_MAX     = 120;  // 최대 속도 (px/s)
   var ELECTRON_RADIUS        = 4;    // 전자 반지름 (px)
   var MAX_PARTICLES          = 50;   // 도선당 최대 파티클 수
+
+  /* 도선의 파티클 수 — 회로 내 최대 전류 대비 비율(ratio)과 도선 길이에 비례.
+   *   같은 비율이면 도선이 길수록 많아져 전자 '간격'이 일정하고,
+   *   전류가 절반이면 간격이 두 배가 된다(밀도 ∝ 전류).
+   *   (과거 round(|I|·8) 은 mA 대 전류에서 늘 1개라 밀도가 전류를 전혀
+   *    반영하지 못했다) */
+  function _particleCount(ratio, pathLen){
+    var n=Math.round(ratio*pathLen/ELECTRON_SPACING_MAX);
+    return Math.max(1, Math.min(MAX_PARTICLES, n));
+  }
 
   var _cv, _ctx;
   var _rafId = null;
@@ -94,7 +103,10 @@ App.RunRenderer=(function(){
       var pool = _pools[wire.id]; if(!pool) return;
       var instI = wireInstI[wire.id] || 0;
       var absI  = Math.abs(instI);
-      var newDir = instI >= 0 ? 1 : -1;
+      /* 전자는 관례 전류(instI>0 = from→to)의 반대로 움직인다 — DC 경로의
+       * electronDir = −wireConvDir 와 같은 규약. (예전엔 부호를 그대로 써서
+       * AC·혼합 회로에서만 전자가 관례 전류 방향으로 흘렀다) */
+      var newDir = instI >= 0 ? -1 : 1;
 
       /* 속도: 전류 비율 기반 */
       var ratio = maxAbsI > 1e-15 ? absI / maxAbsI : 0;
@@ -109,7 +121,8 @@ App.RunRenderer=(function(){
         p.speed = newSpd;
       });
 
-      var target = Math.max(1, Math.min(MAX_PARTICLES, Math.round(absI * ELECTRON_DENSITY_SCALE)));
+      var info = _wirePathInfo(wire);
+      var target = _particleCount(ratio, info ? info.len : 1);
       while(pool.particles.length < target){
         pool.particles.push({t:Math.random(), speed:newSpd, dir:newDir, visible:true});
       }
@@ -149,13 +162,14 @@ App.RunRenderer=(function(){
       /* 전류 방향 → 전자 방향 = 반대 */
       var electronDir = -App.Geo.wireConvDir(wire, sr);
 
-      var count = Math.min(MAX_PARTICLES, Math.max(1, Math.round(Math.abs(I) * ELECTRON_DENSITY_SCALE)));
+      var pinfo = _wirePathInfo(wire);
+      var count = _particleCount(ratio, pinfo ? pinfo.len : 1);
 
       var particles = [];
       for(var i=0;i<count;i++){
         particles.push({
           t:       i / count,
-          speed:   speed * (0.9 + Math.random() * 0.2),
+          speed:   speed,   /* 같은 도선의 전자는 같은 속력 — 간격이 유지돼야 밀도가 전류를 뜻한다 */
           dir:     electronDir,
           visible: true,
         });
