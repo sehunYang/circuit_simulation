@@ -539,13 +539,22 @@ App.TransientGraph=(function(){
       xp=xn;
     }
 
-    /* 표시 방향 정규화: 정상값(0이면 초기값)이 음수면 곡선 전체 부호 반전.
+    /* 표시 방향 정규화: 파형에서 절댓값이 가장 큰 지점(= 응답의 주 진폭,
+     *   보통 최초의 최대 돌입)이 음수면 곡선 전체 부호를 반전한다.
      *   그래프의 관심사는 크기·형태이고 기준 방향은 소자 배치에 따라
-     *   임의로 뒤집힐 수 있으므로 양(+) 위주로 정렬한다. */
+     *   임의로 뒤집힐 수 있으므로 양(+) 위주로 정렬한다.
+     *
+     *   ⚠️ 기준을 '마지막 샘플'로 잡으면 안 된다. 부족감쇠 진동은 0을
+     *      교차하므로 창 끝의 위상에 따라 부호가 임의로 정해지고, 같은
+     *      회로에서 저항값만 바꿔도 곡선이 통째로 뒤집혀 보였다.
+     *      최대 진폭 지점은 창 길이·위상과 무관해 항상 같은 방향을 준다. */
     function canonicalize(arr){
-      var refV=arr[arr.length-1];
-      if(Math.abs(refV)<1e-15) refV=arr[0];
-      if(refV<0){ for(var k=0;k<arr.length;k++) arr[k]=-arr[k]; }
+      var refV=0, mag=0;
+      for(var k=0;k<arr.length;k++){
+        var a=Math.abs(arr[k]);
+        if(a>mag){ mag=a; refV=arr[k]; }
+      }
+      if(refV<0){ for(var k2=0;k2<arr.length;k2++) arr[k2]=-arr[k2]; }
     }
     var poleRef=null, poleDev=0;
     iL_arrs.concat(iC_arrs).forEach(function(o){
