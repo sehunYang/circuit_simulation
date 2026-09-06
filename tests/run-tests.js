@@ -651,6 +651,120 @@ async function main(){
     approx('ωd≈866', td.poles.omegad, wd, 0.08);
   })();
 
+  /* ── TR-4: RLC 직렬 과감쇠 — 파형 vs 2중 지수 해석해 ──
+   *   R=100, L=10mH, C=100µF: α=5000, ω0=1000 → s1,2 = −α ± √(α²−ω0²)
+   *   i(t) = V/(L·(s1−s2)) · (e^{s1 t} − e^{s2 t}) */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var Vv=12, Rv=100, Lv=10e-3, Cv=100e-6;
+    var V=c.add('DC_SOURCE',Vv), R=c.add('RESISTOR',Rv),
+        L=c.add('INDUCTOR',Lv), C=c.add('CAPACITOR',Cv);
+    c.wire(V,'L',R,'L'); c.wire(R,'R',L,'L'); c.wire(L,'R',C,'L'); c.wire(C,'R',V,'R');
+    await solveCircuit(sb,c);
+    var td=sb.App.TransientGraph.getTransientData();
+    scenario('TR-4 RLC 과감쇠: 파형 vs 2중 지수 해석해');
+    check('과도 데이터 존재', !!td&&!!td.curves);
+    if(!td||!td.curves) return;
+    var alpha=Rv/(2*Lv), w0=1/Math.sqrt(Lv*Cv), rt=Math.sqrt(alpha*alpha-w0*w0);
+    var s1=-alpha+rt, s2=-alpha-rt;
+    var arr=td.curves[L.id]; check('L 파형 존재', !!arr); if(!arr) return;
+    var N=arr.length, maxErr=0, ipk=0;
+    for(var k=0;k<N;k++){
+      var t=k/(N-1)*td.tMax;
+      var want=Vv/(Lv*(s1-s2))*(Math.exp(s1*t)-Math.exp(s2*t));
+      ipk=Math.max(ipk,Math.abs(want));
+      maxErr=Math.max(maxErr,Math.abs(arr[k]-want));
+    }
+    approx('전 구간 최대 오차 < 피크의 3%', maxErr/ipk, 0, 0, 0.03);
+    check('비진동 판정', td.poles.isOsc===false);
+    check('부호: 최대 진폭 지점이 양(+)', (function(){var m=0,v=0;for(var k=0;k<N;k++){if(Math.abs(arr[k])>m){m=Math.abs(arr[k]);v=arr[k];}}return v>0;})());
+  })();
+
+  /* ── TR-5: RLC 직렬 임계감쇠 — i(t) = (V/L)·t·e^{−αt}, R=2√(L/C)=20Ω ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var Vv=12, Lv=10e-3, Cv=100e-6, Rv=2*Math.sqrt(Lv/Cv);
+    var V=c.add('DC_SOURCE',Vv), R=c.add('RESISTOR',Rv),
+        L=c.add('INDUCTOR',Lv), C=c.add('CAPACITOR',Cv);
+    c.wire(V,'L',R,'L'); c.wire(R,'R',L,'L'); c.wire(L,'R',C,'L'); c.wire(C,'R',V,'R');
+    await solveCircuit(sb,c);
+    var td=sb.App.TransientGraph.getTransientData();
+    scenario('TR-5 RLC 임계감쇠 (R=2√(L/C)=20Ω): i=(V/L)·t·e^{−αt}');
+    check('과도 데이터 존재', !!td&&!!td.curves);
+    if(!td||!td.curves) return;
+    var alpha=Rv/(2*Lv);
+    var arr=td.curves[L.id]; check('L 파형 존재', !!arr); if(!arr) return;
+    var N=arr.length, maxErr=0, ipk=Vv/Lv/alpha*Math.exp(-1);
+    for(var k=0;k<N;k++){
+      var t=k/(N-1)*td.tMax;
+      var want=Vv/Lv*t*Math.exp(-alpha*t);
+      maxErr=Math.max(maxErr,Math.abs(arr[k]-want));
+    }
+    approx('전 구간 최대 오차 < 피크의 3%', maxErr/ipk, 0, 0, 0.03);
+    approx('피크 = V/(L·α·e)', (function(){var m=0;for(var k=0;k<N;k++)m=Math.max(m,arr[k]);return m;})(), ipk, 0.03);
+    check('비진동 판정 (경계)', td.poles.isOsc===false);
+  })();
+
+  /* ── TR-6: 부족감쇠 표시 방향 일관성 — 같은 회로에서 R만 바꿔도
+   *   최대 진폭 지점(최초 돌입)은 항상 +. (마지막 샘플 기준이던 회귀 방지) ── */
+  await (async function(){
+    scenario('TR-6 부족감쇠 곡선 부호 일관성 (R=3·5·10·15Ω)');
+    for(var i=0;i<4;i++){
+      var Rv=[3,5,10,15][i];
+      var sb=makeApp(), c=circuit(sb);
+      var V=c.add('DC_SOURCE',12), R=c.add('RESISTOR',Rv),
+          L=c.add('INDUCTOR',10e-3), C=c.add('CAPACITOR',100e-6);
+      c.wire(V,'L',R,'L'); c.wire(R,'R',L,'L'); c.wire(L,'R',C,'L'); c.wire(C,'R',V,'R');
+      await solveCircuit(sb,c);
+      var td=sb.App.TransientGraph.getTransientData();
+      var arr=td&&td.curves&&td.curves[L.id];
+      var ok=false;
+      if(arr){ var m=0,v=0; for(var k=0;k<arr.length;k++){ if(Math.abs(arr[k])>m){m=Math.abs(arr[k]);v=arr[k];} } ok=v>0; }
+      check('R='+Rv+'Ω: 최대 진폭 지점 부호 +', ok);
+      check('R='+Rv+'Ω: 진동 판정', !!(td&&td.poles&&td.poles.isOsc));
+    }
+  })();
+
+  /* ── DC-12: 전력 보존 — 전원 공급전력 = Σ I²R (병렬+직렬 혼합) ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('DC_SOURCE',12), R1=c.add('RESISTOR',100), R2=c.add('RESISTOR',200), R3=c.add('RESISTOR',50);
+    var JA=c.add('JUNCTION_3'), JB=c.add('JUNCTION_3');
+    c.wire(V,'L',R3,'L'); c.wire(R3,'R',JA,'L');
+    c.wire(JA,'R',R1,'L'); c.wire(R1,'R',JB,'L');
+    c.wire(JA,'B',R2,'L'); c.wire(R2,'R',JB,'B');
+    c.wire(JB,'R',V,'R');
+    var sr=await solveCircuit(sb,c);
+    scenario('DC-12 전력 보존: V·I_src = Σ I²R (50 + 100∥200)');
+    var Req=50+(100*200)/300, I=12/Req;
+    approx('I_src=12/Req', Math.abs(sr.branchCurrents[V.id]), I, 1e-6);
+    var Psrc=12*Math.abs(sr.branchCurrents[V.id]);
+    var Pr=0; [R1,R2,R3].forEach(function(r){ var i=sr.branchCurrents[r.id]; Pr+=i*i*r.value; });
+    approx('ΣI²R = V·I', Pr, Psrc, 1e-6);
+    var Pr_v=0; [R1,R2,R3].forEach(function(r){ Pr_v+=Math.abs(sr.componentVoltages[r.id]*sr.branchCurrents[r.id]); });
+    approx('Σ|V·I|_R = V·I', Pr_v, Psrc, 1e-6);
+  })();
+
+  /* ── AC-7: 유효전력 — RC 직렬에서 전원 평균전력 = I_rms²·R (역률 반영) ──
+   *   피상전력 V_rms·I_rms 와 다르다: P = V_rms·I_rms·cosφ, cosφ=R/|Z| */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var Vp=220, f=60, Rv=100, Cv=20e-6;   /* Xc=132.6Ω → 역률 0.60 */
+    var V=c.add('AC_SOURCE',Vp,f), R=c.add('RESISTOR',Rv), C=c.add('CAPACITOR',Cv);
+    c.wire(V,'L',R,'L'); c.wire(R,'R',C,'L'); c.wire(C,'R',V,'R');
+    var sr=await solveCircuit(sb,c);
+    scenario('AC-7 유효전력: 전원 P_avg = I_rms²R = V_rms·I_rms·cosφ');
+    var w=2*Math.PI*f, Xc=1/(w*Cv), Z=Math.hypot(Rv,Xc);
+    var Ip=Vp/Z, Irms=Ip/Math.SQRT2, Vrms=Vp/Math.SQRT2;
+    var Preal=Irms*Irms*Rv, Sapp=Vrms*Irms;
+    approx('|I|=V/|Z|', sr.branchCurrents[R.id], Ip, 1e-6);
+    /* 페이저로 계산한 전원 평균전력 Re(V·I*)/2 */
+    var ph=sr.acPhasor, vI=ph.compI[V.id], vV=ph.compV[V.id];
+    var Pph=Math.abs((vV.re*vI.re+vV.im*vI.im)/2);
+    approx('페이저 Re(V·I*)/2 = I_rms²R', Pph, Preal, 1e-6);
+    check('피상전력 ≠ 유효전력 (역률 '+(Rv/Z).toFixed(3)+')', Math.abs(Sapp-Preal)/Sapp>0.05, 'S='+Sapp+' P='+Preal);
+  })();
+
   /* ════════════ 결과 출력 ════════════ */
   var totalChecks=0, totalFail=0, failScen=0;
   console.log('');
