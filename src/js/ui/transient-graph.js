@@ -1183,6 +1183,36 @@ App.TransientGraph=(function(){
   }
 
   /* ── 공개 API ── */
+  /* ── 엔진 v2 파형·극점 적용 ──
+   *   솔버(닫힘 뷰)가 시간 영역 파형(wave)과 정확한 극점(poles)을 주면 그래프는
+   *   그것을 그린다. _computeTransient 의 자체 적분·추정치는 비유 모드가 아직
+   *   쓰는 branchModel 을 위해서만 남아 있다 (D 단계에서 제거). */
+  function _applyEngineWave(){
+    var sr=App.State.solverResult;
+    var view=(sr&&sr.closed)?sr.closed:sr;
+    if(!view||!view.wave) return;
+    var w=view.wave;
+    _tMax=w.tMax;
+    Object.keys(_history).forEach(function(id){
+      var src=w.elem[id]; if(!src) return;
+      /* 표시 방향: 최대 진폭 지점이 + 가 되게 (2차 경로와 같은 규약) */
+      var arr=Float32Array.from(src.i), mag=0, ref=0;
+      for(var k=0;k<arr.length;k++){ var a=Math.abs(arr[k]); if(a>mag){ mag=a; ref=arr[k]; } }
+      if(ref<0) for(var k2=0;k2<arr.length;k2++) arr[k2]=-arr[k2];
+      _history[id]=arr;
+    });
+    var p=view.poles;
+    if(p){
+      _systemPoles={alpha:p.alpha||0, omegad:p.omegaD||0, isOsc:!!p.isOsc};
+      if(p.domTau>0) _domTau=p.domTau;
+      if(p.taus.length===1) Object.keys(_fitData).forEach(function(id){ _fitData[id].tau=p.taus[0]; });
+      _secondFit={};
+      if(!p.isOsc && p.taus.length>=2){
+        Object.keys(_history).forEach(function(id){ var m2=_fitTwoMode(_history[id],_tMax); if(m2) _secondFit[id]=m2; });
+      }
+    }
+  }
+
   function show(){
     var params=_extractParams();
     if(!params){return;}
@@ -1192,6 +1222,7 @@ App.TransientGraph=(function(){
     _ctx=_cv.getContext('2d');
     _tMax=0.1;
     _history=_computeTransient(params);
+    _applyEngineWave();            /* 엔진 v2 파형·극점이 있으면 그것으로 대체 */
     _buildToggles(params);
     panel.classList.add('visible');
     _running=true;
@@ -1242,12 +1273,13 @@ App.TransientGraph=(function(){
   function getTransientData(){
     var params=_extractParams();
     if(!params) return null;
-    var savedTMax=_tMax, savedPoles=_systemPoles;
+    var savedTMax=_tMax, savedPoles=_systemPoles, savedHist=_history;
     var curves=_computeTransient(params);   /* _fitData, _domTau, _branchModel 갱신 (부수효과로 _tMax 변경) */
+    _history=curves; _applyEngineWave(); curves=_history;   /* 엔진 파형·극점 우선 */
     var data={ byId:_fitData, domTau:_domTau, branchModel:_branchModel,
                curves:curves, poles:_systemPoles, tMax:_tMax };
     /* 패널이 실행 중이 아니면 _tMax 등 원복 (그래프 상태 보호) */
-    if(!_running){ _tMax=savedTMax; _systemPoles=savedPoles; }
+    if(!_running){ _tMax=savedTMax; _systemPoles=savedPoles; _history=savedHist; }
     return data;
   }
 

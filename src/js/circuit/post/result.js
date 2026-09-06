@@ -172,4 +172,74 @@ App.Post.avgPower=function(view, id){
 };
 App.Post.fail=fail;
 
+/* ── 파형(wave) 조립 — 시간 영역 결과 → 소비자가 읽는 형태 ──
+ *   wave = {
+ *     t: Float64Array,  tMax, steps,
+ *     node: {k: Float32Array},                    노드 전위 v_k(t)
+ *     elem: {id: {i: Float32Array, v: Float32Array, out:[outputs…]}},
+ *     wire: {wireId: Float32Array},               도선 전류 (from→to +)
+ *     sample(id, t) → {i, v}     sampleWire(wireId, t) → i     (선형 보간)
+ *   } */
+App.Post.buildWave=function(nl, devs, tr){
+  var S=tr.steps, t=tr.t, comps=nl.comps, wires=nl.wires;
+  var devById={}; devs.forEach(function(d){ devById[d.id]=d; });
+  function nodeV(x,k){ return k>=1?x[k-1]:0; }
+
+  var node={};
+  for(var k=0;k<nl.nodeCount;k++){
+    var arr=new Float32Array(S+1);
+    for(var n=0;n<=S;n++) arr[n]=nodeV(tr.xs[n],k);
+    node[k]=arr;
+  }
+  var elem={};
+  comps.forEach(function(c){
+    var d=devById[c.id], nn=nl.compNodes[c.id];
+    var ia=new Float32Array(S+1), va=new Float32Array(S+1), outs=null;
+    if(d){
+      outs=tr.outs[c.id];
+      for(var n=0;n<=S;n++){ ia[n]=outs[n].i; va[n]=outs[n].v; }
+    } else {
+      for(var n2=0;n2<=S;n2++){ va[n2]=nodeV(tr.xs[n2],nn[0])-nodeV(tr.xs[n2],nn[1]); }
+    }
+    elem[c.id]={i:ia, v:va, out:outs};
+  });
+
+  /* 도선 전류: 포트별 유입 전류 배열을 채널(K=S+1)로 KCL 필링 */
+  var K=S+1;
+  var portI={};
+  comps.forEach(function(c){
+    var d=devById[c.id]; if(!d) return;
+    var per={};
+    d.ports.forEach(function(p){ per[p]=new Array(K); });
+    for(var n=0;n<=S;n++){
+      var pc=d.portCurrentsOut(tr.outs[c.id][n]);
+      d.ports.forEach(function(p){ per[p][n]=pc[p]||0; });
+    }
+    portI[c.id]=per;
+  });
+  var wc=App.Post.wireChannels(nl, function(c, portId){
+    if(NODE_TYPES[c.type]||nl.passthrough[c.id]) return null;
+    if(c.type===TYPE.SWITCH){ var z=new Array(K); for(var i=0;i<K;i++) z[i]=0; return z; }
+    return portI[c.id]?portI[c.id][portId]:null;
+  }, K);
+  var wire={};
+  wires.forEach(function(w){ wire[w.id]=Float32Array.from(wc.chan[w.id]); });
+  /* 닫힌 스위치 전류 파형 */
+  Object.keys(wc.passI).forEach(function(id){ if(elem[id]) elem[id].i=Float32Array.from(wc.passI[id]); });
+
+  function interp(arr, tt){
+    if(!arr) return 0;
+    if(tt<=0) return arr[0];
+    if(tt>=t[S]) return arr[S];
+    var f=tt/t[S]*S, n=Math.floor(f), r=f-n;
+    return arr[n]*(1-r)+arr[n+1]*r;
+  }
+  return{
+    t:t, tMax:t[S], steps:S, node:node, elem:elem, wire:wire,
+    sample:function(id,tt){ var e=elem[id]; return e?{i:interp(e.i,tt), v:interp(e.v,tt)}:{i:0,v:0}; },
+    sampleWire:function(wid,tt){ return interp(wire[wid],tt); },
+    sampleNode:function(k,tt){ return interp(node[k],tt); },
+  };
+};
+
 }());

@@ -41,7 +41,7 @@ function makeApp(){
    'circuit/devices/index.js','circuit/devices/resistor.js','circuit/devices/capacitor.js',
    'circuit/devices/inductor.js','circuit/devices/vsource.js',
    'circuit/devices/bulb.js','circuit/devices/diode.js','circuit/devices/bjt.js',
-   'circuit/analysis/op.js','circuit/analysis/ac.js',
+   'circuit/analysis/op.js','circuit/analysis/ac.js','circuit/analysis/tran.js','circuit/analysis/poles.js',
    'circuit/post/wires.js','circuit/post/result.js',
    'circuit/solver.js','ui/transient-graph.js'].forEach(function(f){ load('src/js/'+f); });
   return sandbox;
@@ -969,6 +969,92 @@ async function main(){
     approx('I=E/(R+r)=0.1', Math.abs(sr.branchCurrents[B1.id]), I, 1e-6);
     approx('단자전압 = E − I·r = 10V', Math.abs(sr.dc.compV[B1.id]), 10, 1e-6);
     approx('밝기 = P/1W', sr.dc.out[B1.id].brightness, P/1, 1e-6);
+  })();
+
+  /* ── TD-1: 극점 정확값 — RLC 직렬 세 감쇠 영역 (지금은 추정이 아니라 고유값) ── */
+  await (async function(){
+    scenario('TD-1 극점(poles): RLC 부족·임계·과감쇠의 α·ω_d·τ 정확값');
+    var cases=[{R:5,osc:true},{R:10,osc:true},{R:20,osc:false},{R:100,osc:false}];
+    for(var i=0;i<cases.length;i++){
+      var Rv=cases[i].R, Lv=10e-3, Cv=100e-6;
+      var sb=makeApp(), c=circuit(sb);
+      var V=c.add('DC_SOURCE',12), R=c.add('RESISTOR',Rv), L=c.add('INDUCTOR',Lv), C=c.add('CAPACITOR',Cv);
+      c.wire(V,'L',R,'L'); c.wire(R,'R',L,'L'); c.wire(L,'R',C,'L'); c.wire(C,'R',V,'R');
+      var sr=await solveCircuit(sb,c);
+      var p=sr.poles; check('R='+Rv+': poles 존재', !!p); if(!p) continue;
+      var alpha=Rv/(2*Lv), w0=1/Math.sqrt(Lv*Cv);
+      if(cases[i].osc){
+        var wd=Math.sqrt(w0*w0-alpha*alpha);
+        check('R='+Rv+': 진동', p.isOsc===true);
+        approx('R='+Rv+': α='+alpha, p.alpha, alpha, 1e-6);
+        approx('R='+Rv+': ω_d='+wd.toFixed(1), p.omegaD, wd, 1e-6);
+      } else {
+        check('R='+Rv+': 비진동', p.isOsc===false, JSON.stringify(p.poles));
+        var rt=Math.sqrt(Math.max(0,alpha*alpha-w0*w0));
+        var s1=-alpha+rt, s2=-alpha-rt;
+        var got=p.poles.map(function(z){return z.re;}).sort(function(a,b){return b-a;});
+        approx('R='+Rv+': s1='+s1.toFixed(1), got[0], s1, 1e-4);
+        approx('R='+Rv+': s2='+s2.toFixed(1), got[1], s2, 1e-4);
+      }
+    }
+  })();
+
+  /* ── TD-2: 시간 영역 파형 vs 해석해 — RC 충전전류, RL 상승, 도선 전류 파형 ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('DC_SOURCE',12), R=c.add('RESISTOR',100), C=c.add('CAPACITOR',100e-6);
+    var w1=c.wire(V,'L',R,'L'); c.wire(R,'R',C,'L'); c.wire(C,'R',V,'R');
+    var sr=await solveCircuit(sb,c);
+    scenario('TD-2 파형(wave): RC i(t)=I0·e^{−t/τ}, v_C(t)=V(1−e^{−t/τ}), 도선 파형 일치');
+    check('wave 존재', !!sr.wave); if(!sr.wave) return;
+    var w=sr.wave, tau=100*100e-6, maxErr=0, maxErrV=0, maxErrW=0;
+    approx('구간 = 5τ', w.tMax, 5*tau, 1e-6);
+    for(var n=0;n<=w.steps;n+=Math.max(1,Math.round(w.steps/40))){
+      var t=w.t[n], want=0.12*Math.exp(-t/tau), wantV=12*(1-Math.exp(-t/tau));
+      maxErr=Math.max(maxErr, Math.abs(Math.abs(w.elem[C.id].i[n])-want));
+      maxErrV=Math.max(maxErrV, Math.abs(Math.abs(w.elem[C.id].v[n])-wantV));
+      maxErrW=Math.max(maxErrW, Math.abs(Math.abs(w.wire[w1.id][n])-want));
+    }
+    approx('i_C 최대 오차 < 0.5% of I0', maxErr/0.12, 0, 0, 0.005);
+    approx('v_C 최대 오차 < 0.5% of V', maxErrV/12, 0, 0, 0.005);
+    approx('도선 전류 파형 = 소자 전류 파형', maxErrW/0.12, 0, 0, 0.005);
+    approx('sample(t=τ): i = I0/e', Math.abs(w.sample(C.id,tau).i), 0.12/Math.E, 5e-3);
+  })();
+
+  /* ── TD-3: 반파 정류 — AC(V_p=10, 60Hz) + 다이오드 + R. 저항 전압 평균 ≈ (V_p−V_F)/π, 음의 반주기 0 ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('AC_SOURCE',10,60), Dd=c.add('DIODE',0), R=c.add('RESISTOR',1000);
+    c.wire(V,'L',Dd,'L'); c.wire(Dd,'R',R,'L'); c.wire(R,'R',V,'R');
+    var sr=await solveCircuit(sb,c);
+    scenario('TD-3 반파 정류 파형: 음의 반주기 차단, 평균 ≈ (V_p−0.6)/π');
+    check('유효 + wave', sr.valid&&!!sr.wave, sr.error); if(!sr.wave) return;
+    var w=sr.wave, T=1/60, S=w.steps;
+    /* 마지막 한 주기 구간에서 통계 */
+    var n0=0; while(w.t[n0]<w.tMax-T) n0++;
+    var sum=0,cnt=0,minV=Infinity,maxV=-Infinity,negCount=0;
+    for(var n=n0;n<=S;n++){ var v=w.elem[R.id].v[n]; sum+=v; cnt++; if(v<minV)minV=v; if(v>maxV)maxV=v; if(v<-0.05)negCount++; }
+    var avg=sum/cnt;
+    check('음의 반주기에서 저항 전압 ≈ 0 (음수 없음)', negCount===0&&minV>-0.05, 'min='+minV);
+    approx('피크 ≈ V_p − V_F (≈9.3~9.5V)', maxV, 9.4, 0.02);
+    approx('평균 ≈ (V_p−V_F)/π', avg, (10-0.6)/Math.PI, 0.05);
+  })();
+
+  /* ── TD-4: 혼합 DC+AC 파형이 페이저 해와 일치 (선형) — 같은 물리량 두 경로 ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V1=c.add('DC_SOURCE',12), V2=c.add('AC_SOURCE',5,60), R=c.add('RESISTOR',100), L=c.add('INDUCTOR',10e-3);
+    c.wire(V1,'L',V2,'L'); c.wire(V2,'R',R,'L'); c.wire(R,'R',L,'L'); c.wire(L,'R',V1,'R');
+    var sr=await solveCircuit(sb,c);
+    scenario('TD-4 혼합 DC+AC: 시간 영역 정상상태 = I_dc + Re[I·e^{jωt}] (페이저)');
+    check('유효 + wave + acPhasor', sr.valid&&!!sr.wave&&!!sr.acPhasor, sr.error); if(!sr.wave||!sr.acPhasor) return;
+    var w=sr.wave, ph=sr.acPhasor, maxErr=0, scale=0;
+    var n0=Math.round(w.steps*0.75);
+    for(var n=n0;n<=w.steps;n+=3){
+      var t=w.t[n], want=ph.instCurrent(R.id,t), got=w.elem[R.id].i[n];
+      maxErr=Math.max(maxErr,Math.abs(got-want)); scale=Math.max(scale,Math.abs(want));
+    }
+    approx('마지막 1/4 구간 최대 오차 < 1%', maxErr/scale, 0, 0, 0.01);
   })();
 
   /* ════════════ 결과 출력 ════════════ */

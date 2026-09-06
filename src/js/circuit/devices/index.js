@@ -41,6 +41,15 @@ App.Devices=(function(){
       extra:0, k:-1, linear:true, dynamic:false, disabled:false,
       reset:function(){},
       loadOP:function(){}, loadAC:function(){},
+      /* ── 시간 영역 (기본: 정적 소자 = 동작점 스탬프 그대로) ──
+       *   loadTran(sys, x, ctx)  ctx = {mode:'tran', t, h, method:'BE'|'TR', init}
+       *   tranInit(x0)           t=0⁺ 해로 이력 초기화
+       *   tranUpdate(x, ctx)     한 스텝 확정 후 이력 갱신 → 이 스텝의 outputs */
+      loadTran:function(sys,x,ctx){ this.loadOP(sys,x,ctx); },
+      tranInit:function(){},
+      tranUpdate:function(x){ return this.outputs(x); },
+      /* outputs 객체 → 포트별 유입 전류 (파형 후처리용) */
+      portCurrentsOut:function(o){ var r={}; r[this.ports[0]]=o.i; r[this.ports[1]]=-o.i; return r; },
       outputs:function(x){ return{v:V(x,this.i0)-V(x,this.i1), i:0}; },
       outputsAC:function(xr,xi){ return{v:{re:V(xr,this.i0)-V(xr,this.i1), im:V(xi,this.i0)-V(xi,this.i1)}, i:{re:0,im:0}}; },
       portCurrents:function(x){

@@ -81,6 +81,7 @@ function factory(comp, nn, pnp){
   d.portCurrents=function(x){
     var o=this.outputs(x); return{L:o.iB, T:o.iC, B:o.iE};
   };
+  d.portCurrentsOut=function(o){ return{L:o.iB, T:o.iC, B:o.iE}; };
   d.outputsAC=function(xr,xi){
     return{v:{re:D.V(xr,this.i1)-D.V(xr,this.i2), im:D.V(xi,this.i1)-D.V(xi,this.i2)}, i:{re:0,im:0}};
   };

@@ -32,7 +32,8 @@ App.Solver=(function(){
   }
 
   /* 한 상태(열림/닫힘)의 해석 */
-  function analyze(comps, wires, closed){
+  function analyze(comps, wires, closed, opts){
+    opts=opts||{};
     var nl=App.Netlist.build(comps, wires, {closed:closed});
     if(!nl.valid) return App.Post.fail(nl.error||'토폴로지 오류');
     try{
@@ -56,7 +57,52 @@ App.Solver=(function(){
         ac=App.Analysis.ac(nl, devs, op.x, omega, {});
         if(ac.err) return App.Post.fail(ac.err);
       }
-      return App.Post.buildView(nl, devs, op.x, ac, omega);
+      var view=App.Post.buildView(nl, devs, op.x, ac, omega);
+      if(!view.valid) return view;
+
+      /* ── 시간 영역: 닫힘 상태(t=0 스위치 닫힘)에서만 의미가 있다 ──
+       *   동적 소자(L/C)가 있거나, 비선형 소자와 교류가 함께 있으면(정류) 파형을 만든다.
+       *   구간 T: 선형이면 극점에서 (5·τ_max, 진동이면 ≥ 3 주기), 교류는 ≥ 4 주기,
+       *   비선형 DC 는 R·C, L/R 의 조합으로 어림. */
+      if(closed && !opts.noWave){
+        var dynamic=devs.some(function(d){return d.dynamic;});
+        var nonlinear=devs.some(function(d){return !d.linear;});
+        var poles=dynamic?App.Analysis.poles(nl, devs):null;
+        view.poles=poles;
+        if(dynamic || (nonlinear && nl.hasAC)){
+          var T=0;
+          if(poles&&poles.domTau>0){
+            T=5*poles.domTau;
+            if(poles.isOsc&&poles.omegaD>0) T=Math.max(T, 3*2*Math.PI/poles.omegaD);
+          } else if(dynamic){
+            /* 극점을 못 구하는(비선형) 경우: 직렬 근사 τ */
+            var Req=0, Csum=0, Lsum=0;
+            comps.forEach(function(c){
+              if(c.type===TYPE.RESISTOR||c.type===TYPE.BULB) Req+=c.value||0;
+              if(c.type===TYPE.CAPACITOR) Csum+=c.value||0;
+              if(c.type===TYPE.INDUCTOR) Lsum+=c.value||0;
+            });
+            Req=Req||100;
+            T=5*Math.max(Req*Csum, Lsum/Req, 1e-6);
+          }
+          if(nl.hasAC&&omega>0){ T=Math.max(T, 4*2*Math.PI/omega); }
+          if(!(T>0)) T=1e-3;
+          /* 스텝 수: 가장 빠른 극점(τ_min)을 스텝 25개로 분해해야 사다리꼴 오차가
+           *   1% 아래로 내려간다 (과감쇠 RLC 는 τ_fast/τ_slow 가 1/100 이기도 하다) */
+          var steps=1500;
+          if(poles&&poles.poles.length){
+            var tauMin=Infinity;
+            poles.poles.forEach(function(z){ if(z.re<0){ var tq=1/(-z.re); if(tq<tauMin) tauMin=tq; } });
+            if(isFinite(tauMin)&&tauMin>0) steps=Math.max(steps, Math.ceil(T/(tauMin/25)));
+          }
+          if(nl.hasAC&&omega>0) steps=Math.max(steps, Math.round(200*T*omega/(2*Math.PI)));
+          steps=Math.min(steps, 8000);
+          var tr=App.Analysis.tran(nl, devs, {tMax:T, steps:steps});
+          if(!tr.err) view.wave=App.Post.buildWave(nl, devs, tr);
+          else view.warnings.push('파형 계산 실패: '+tr.err);
+        }
+      }
+      return view;
     }catch(e){
       return App.Post.fail('내부 오류: '+e.message);
     }
@@ -67,9 +113,9 @@ App.Solver=(function(){
     var wantClosed=opts.closed!==false;
     if(!comps.length) return _empty();
     var hasSwitches=comps.some(function(c){return c.type===TYPE.SWITCH;});
-    var closedView=analyze(comps, wires, true);
+    var closedView=analyze(comps, wires, true, opts);
     closedView.switchState='closed';
-    var openView=hasSwitches?analyze(comps, wires, false):closedView;
+    var openView=hasSwitches?analyze(comps, wires, false, opts):closedView;
     if(hasSwitches) openView.switchState='open';
     var top=wantClosed?closedView:openView;
     /* 뷰를 복사하지 않고 메타를 덧붙인다 (open/closed 가 같은 객체여도 무해) */
@@ -83,7 +129,10 @@ App.Solver=(function(){
     return !!(App.State && App.State.mode && App.State.mode!=='edit');
   }
   function solveNow(){
-    App.State.solverResult=solve(App.State.components, App.State.wires, {closed:_closedForMode()});
+    /* 편집 모드에서는 파형을 만들지 않는다 (그래프·실행·비유가 없으니 쓸 데가 없고,
+     *   드래그 중 재해석이 잦다). 실행·비유 모드 진입 시 solveNow 가 다시 불린다. */
+    var closed=_closedForMode();
+    App.State.solverResult=solve(App.State.components, App.State.wires, {closed:closed, noWave:!closed});
     App.Events.emit('solver:done');
     return App.State.solverResult;
   }
