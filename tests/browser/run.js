@@ -142,6 +142,37 @@ async function blobCount(p){
   chk('병렬 회로 전자 개수 > 도선 수(8) — 전류 크기가 밀도에 반영', blobs>8, '전자 개수='+blobs);
   await L.mode(p,'edit');
 
+  /* ── 7b. RL∥RC 병렬: 정상상태 RC 가지는 '0 A' 로 표기되어야 한다 (빈칸·'0.00 nA' 아님) ── */
+  await L.build(p,
+    [{key:'dc',type:'DC_SOURCE',gx:47,gy:50,rot:90,value:12},
+     {key:'ja',type:'JUNCTION_3',gx:50,gy:49,rot:0,value:0},
+     {key:'jb',type:'JUNCTION_3',gx:56,gy:49,rot:0,value:0},
+     {key:'r1',type:'RESISTOR',gx:51,gy:48,rot:0,value:100},
+     {key:'l', type:'INDUCTOR',gx:54,gy:48,rot:0,value:10e-3},
+     {key:'r2',type:'RESISTOR',gx:51,gy:51,rot:0,value:200},
+     {key:'c', type:'CAPACITOR',gx:54,gy:51,rot:0,value:100e-6}],
+    [['dc','L','ja','L','V-first'],
+     ['ja','R','r1','L','V-first'],['r1','R','l','L','H-first'],['l','R','jb','L','V-first'],
+     ['ja','B','r2','L','V-first'],['r2','R','c','L','H-first'],['c','R','jb','B','H-first'],
+     ['jb','R','dc','R','V-first']]);
+  await L.select(p,'r2'); r=await rows(p);
+  chk("RL∥RC: RC 가지 저항 전류 '0 A'", r['전류']==='0 A', r['전류']);
+  await L.select(p,'c'); r=await rows(p);
+  chk("RL∥RC: 축전기 전류 '0 A'", r['전류']==='0 A', r['전류']);
+  await L.select(p,'l'); r=await rows(p);
+  near('RL∥RC: 인덕터 전류 120mA', val(r['전류']), 0.12, 1e-3);
+  /* 배지: 전류 0 인 도선에도 배지가 그려지는지 — canvas-main 에서 r2–c 사이 도선 아래(y≈51.8) 배지 픽셀 존재 */
+  await L.focus(p,52,50,1.5);
+  await p.evaluate(()=>{const S=window.App.State; if(!S.showBadges)document.getElementById('vis-badges').click();});
+  await L.sleep(400);
+  const badgePx=await p.evaluate(()=>{
+    const cv=document.getElementById('canvas-main'),c=cv.getContext('2d'),vt=window.App.State.viewTransform,dpr=window.devicePixelRatio||1;
+    const x0=(52.3*CELL_SIZE*vt.scale+vt.offsetX)*dpr, x1=(53.7*CELL_SIZE*vt.scale+vt.offsetX)*dpr;
+    const y0=(51.6*CELL_SIZE*vt.scale+vt.offsetY)*dpr, y1=(52.1*CELL_SIZE*vt.scale+vt.offsetY)*dpr;
+    const d=c.getImageData(Math.round(x0),Math.round(y0),Math.round(x1-x0),Math.round(y1-y0)).data;
+    let n=0; for(let i=0;i<d.length;i+=4){ if(d[i]<80&&d[i+3]>0) n++; } return n; });
+  chk('RL∥RC: 전류 0 인 RC 가지 도선에도 배지가 그려짐', badgePx>30, '잉크 픽셀='+badgePx);
+
   /* ── 8. 비유 모드: HUD τ = RC, AC 차단 ── */
   await L.build(p,C.rc.comps,C.rc.wires); await L.mode(p,'analogy'); await L.sleep(1200);
   const tau=await p.evaluate(()=>document.getElementById('analogy-hud-tau').textContent);

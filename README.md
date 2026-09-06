@@ -413,8 +413,8 @@ python -m http.server 8000     # → http://localhost:8000
 물리 검증:
 
 ```bash
-node tests/run-tests.js       # 솔버·과도응답을 해석해와 대조 — 35개 시나리오 (165 검증)
-node tests/browser/run.js     # 화면에 보이는 값·전자 방향·밀도 검증 — 헤드리스 Chrome (24 검증)
+node tests/run-tests.js       # 솔버·과도응답을 해석해와 대조 — 36개 시나리오 (174 검증)
+node tests/browser/run.js     # 화면에 보이는 값·전자 방향·밀도 검증 — 헤드리스 Chrome (28 검증)
 ```
 
 구조와 설계 의도는 **[ARCHITECTURE.md](ARCHITECTURE.md)** 에 정리돼 있습니다.

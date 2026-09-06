@@ -46,7 +46,7 @@ App.PropPanel=(function(){
   function _fmtCurrent(A){
     if(A==null) return '계산 불가';
     var abs=Math.abs(A);
-    if(abs===0) return '0 A';
+    if(abs<1e-12) return '0 A';   /* 수치 잔차(1e-18 등)도 0 — "0.00 nA" 로 보이지 않게 */
     if(abs<1e-6)  return (A*1e9).toFixed(2)+' nA';
     if(abs<1e-3)  return (A*1e6).toFixed(2)+' µA';
     if(abs<1)     return (A*1e3).toFixed(3)+' mA';

@@ -341,7 +341,10 @@ App.EditRenderer=(function(){
       var ep=_wireEndpoints(wire);
       if(!ep) return;
       var Ipeak=_wireCurrentMag(wire,sr,wc);
-      if(Ipeak==null||Math.abs(Ipeak)<1e-12) return;
+      /* 전류 0 인 도선도 배지를 그린다 — "0mA" 는 정보다.
+       *   (DC 정상상태에서 축전기 가지, 매달린 가지 등. 예전엔 건너뛰어서
+       *    RL∥RC 회로의 RC 쪽만 배지가 비어 '계산이 안 된 것'처럼 보였다) */
+      if(Ipeak==null) return;
       if(!_segVisible(ep.p1,ep.p2,W,H)) return;
       var path=App.Geo.calcWirePath(ep.p1.x,ep.p1.y,ep.p2.x,ep.p2.y,wire.direction);
       for(var k=0;k<path.length-1;k++){
@@ -373,7 +376,7 @@ App.EditRenderer=(function(){
     App.State.components.forEach(function(comp){
       if(comp.type===TYPE.JUNCTION_3||comp.type===TYPE.JUNCTION_4) return;
       var Ipeak=sr.branchCurrents[comp.id];
-      if(Ipeak==null||Math.abs(Ipeak)<1e-15) return;
+      if(Ipeak==null) return;   /* 0 도 그린다 — 도선 배지와 같은 이유 */
       var gp=App.Geo.gridToPixel(comp.gridX,comp.gridY);
       if(gp.x+cellPx<-5||gp.x>W+5||gp.y+cellPx<-5||gp.y>H+5) return;
       var fsz=Math.max(10,Math.min(SN.FS.badgeMax,cellPx*0.22));
@@ -418,6 +421,7 @@ App.EditRenderer=(function(){
   /* 부품 배지용 짧은 전류 포맷 */
   function _fmtCurrentShort(A){
     var abs=Math.abs(A);
+    if(abs<1e-12) return '0mA';   /* 수치 잔차(1e-18 등)는 0 — "0nA" 로 읽히지 않게 */
     if(abs<1e-6)  return (A*1e9).toFixed(0)+'nA';
     if(abs<1e-3)  return (A*1e6).toFixed(1)+'µA';
     if(abs<1)     return (A*1e3).toFixed(2)+'mA';

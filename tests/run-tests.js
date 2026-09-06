@@ -765,6 +765,28 @@ async function main(){
     check('피상전력 ≠ 유효전력 (역률 '+(Rv/Z).toFixed(3)+')', Math.abs(Sapp-Preal)/Sapp>0.05, 'S='+Sapp+' P='+Preal);
   })();
 
+  /* ── DC-13: RL ∥ RC 병렬 — 정상상태에서 RC 가지는 정확히 0, RL 가지는 V/R1 ──
+   *   (배지가 전류 0 인 가지를 건너뛰어 빈칸으로 보이던 표시 버그의 물리 근거) */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('DC_SOURCE',12), R1=c.add('RESISTOR',100), L=c.add('INDUCTOR',10e-3),
+        R2=c.add('RESISTOR',200), C=c.add('CAPACITOR',100e-6);
+    var JA=c.add('JUNCTION_3'), JB=c.add('JUNCTION_3');
+    c.wire(V,'L',JA,'L');
+    c.wire(JA,'R',R1,'L'); c.wire(R1,'R',L,'L'); c.wire(L,'R',JB,'L');
+    var wA=c.wire(JA,'B',R2,'L'); var wB=c.wire(R2,'R',C,'L'); var wC=c.wire(C,'R',JB,'B');
+    c.wire(JB,'R',V,'R');
+    var sr=await solveCircuit(sb,c);
+    scenario('DC-13 RL∥RC 병렬: RC 가지 0A, RL 가지 V/R1');
+    check('유효', sr.valid, sr.error);
+    approx('I_R1=I_L=0.12', sr.branchCurrents[R1.id], 0.12, 1e-6);
+    approx('I_R2=0', Math.abs(sr.branchCurrents[R2.id]), 0, 0, 1e-12);
+    approx('I_C=0', Math.abs(sr.branchCurrents[C.id]), 0, 0, 1e-12);
+    [wA,wB,wC].forEach(function(w){ approx('도선 '+w.id+' 전류=0', Math.abs(sr.wireCurrents[w.id]), 0, 0, 1e-12); });
+    check('RC 가지 도선 전류가 null 이 아님 (배지 표시 대상)', sr.wireCurrents[wB.id]!=null);
+    approx('전원 전류=0.12', Math.abs(sr.branchCurrents[V.id]), 0.12, 1e-6);
+  })();
+
   /* ════════════ 결과 출력 ════════════ */
   var totalChecks=0, totalFail=0, failScen=0;
   console.log('');
