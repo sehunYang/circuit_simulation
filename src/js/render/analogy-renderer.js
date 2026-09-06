@@ -79,6 +79,7 @@ App.AnalogyRenderer=(function(){
    *   _simSpeed: 물리시간 t(초) = _simTime(벽시계초) * _simSpeed.
    *     동적 소자가 있으면 5·τ 구간을 약 SHOW_SPAN초에 보여주도록 가속/감속한다. */
   var _transData=null, _domTau=0, _simSpeed=1;
+  var _wave=null;              // 엔진 v2 시간 영역 파형 (solverResult.closed.wave) — 있으면 모델 대신 표본화
   var _branchModel=null;       // {byComp, byWire, domTau} — 전 가지 i(t) 모델
   var SHOW_SPAN=30.0;          // 5τ 과도구간을 보여줄 화면상 시간(초)
   var _staticBase=0.55;        // 동적 소자 없을 때 기본 흐름 가동 시정수(s)
@@ -114,6 +115,7 @@ App.AnalogyRenderer=(function(){
     var bm=_branchModel;
     if(bm&&bm.byNode){
       var nd=_portNode(comp,portId);
+      if(_wave&&nd!=null&&_wave.node[nd]) return _wave.sampleNode(nd,t);   /* 엔진 파형 */
       if(nd!=null && bm.byNode[nd]){
         var m=bm.byNode[nd];
         if(t<=0) return m.v0;
@@ -339,6 +341,7 @@ App.AnalogyRenderer=(function(){
    *   모델이 없으면(정적 회로) 정상상태 전류로 부드럽게 가동. */
   function _branchCurrent(lane, t){
     var m=lane.cur;
+    if(m&&_wave&&(m.waveId||m.waveWire)) return Math.abs(_branchCurrentModel(m,t));   /* 엔진 파형 */
     if(m){
       if(t<=0) return Math.abs(m.i0);
       var e=Math.exp(-t/Math.max(m.tau,1e-12));
@@ -412,6 +415,13 @@ App.AnalogyRenderer=(function(){
         var m=bm.byNode[k]; any=true;
         [m.v0,m.vinf].forEach(function(v){ if(v<_vMin)_vMin=v; if(v>_vMax)_vMax=v; });
       });
+    }
+    /* 엔진 파형이 있으면 시간 전 구간의 극값으로 정규화 (진동 시 화면 이탈 방지) */
+    if(_wave){
+      Object.keys(_wave.node).forEach(function(k){ var a=_wave.node[k]; any=true;
+        for(var q=0;q<a.length;q++){ if(a[q]<_vMin)_vMin=a[q]; if(a[q]>_vMax)_vMax=a[q]; } });
+      Object.keys(_wave.wire).forEach(function(k){ var a=_wave.wire[k];
+        for(var q=0;q<a.length;q++){ var m=Math.abs(a[q]); if(m>_maxI)_maxI=m; } });
     }
     if(!any){_vMin=0;_vMax=1;}
     if(_vMax-_vMin<1e-6)_vMax=_vMin+1;
@@ -536,6 +546,7 @@ App.AnalogyRenderer=(function(){
     }
     /* 도선 가지 전류 모델 (branchModel.byWire) */
     var wm=(_branchModel&&_branchModel.byWire)?_branchModel.byWire[w.id]:null;
+    if(_wave&&_wave.wire[w.id]){ wm=wm||{i0:0,iinf:0,tau:1}; wm.waveWire=w.id; }   /* 엔진 파형 */
     /* 물 레인: 꺾임점을 포함한 3점 폴리라인 */
     var lane=_addLane([A.clone(),Bend.clone(),B.clone()],sign,'wire',null,wm,Math.abs(signedI));
     if(lane){
@@ -613,6 +624,7 @@ App.AnalogyRenderer=(function(){
     var I=Math.abs((sr&&sr.branchCurrents&&sr.branchCurrents[c.id])||0);
     /* 저항 가지 전류 모델 (C와 직렬이면 i0>0·iinf=0 → 초반에 돈다, #2 수정) */
     var rm=(_branchModel&&_branchModel.byComp)?_branchModel.byComp[c.id]:null;
+    if(_wave&&_wave.elem[c.id]){ rm=rm||{i0:0,iinf:0,tau:1}; rm.waveId=c.id; }
     /* 순간전력 정규화 기준: i_peak^2·R (i_peak = max(|i0|,|iinf|)) */
     var ipk=rm?Math.max(Math.abs(rm.i0),Math.abs(rm.iinf)):I;
     var Ppeak=ipk*ipk*Math.max(c.value||0,1e-6);
@@ -827,6 +839,7 @@ App.AnalogyRenderer=(function(){
      *   정상(supply): −극→+극 (아래→위, 펌프가 퍼올림)
      *   역기전력(absorb): +극→−극 (위→아래, 물이 펌프를 거꾸로 통과) */
     var pm=pm0;
+    if(_wave&&_wave.elem[c.id]){ pm=pm||{i0:0,iinf:0,tau:1}; pm.waveId=c.id; }   /* 엔진 파형 */
     var minusEnd=pMinus.clone();
     var plusEnd =pPlus.clone();
     var botPt=new THREE.Vector3(center.x, pMinus.y, center.z);
@@ -904,6 +917,7 @@ App.AnalogyRenderer=(function(){
      *   레인은 탱크를 관통해 지나간다(회로 전류는 양쪽 극판 모두에 흐르므로).
      *   수위가 차오르며 i(t)→0 이 되면 입자도 함께 멈춘다. */
     var cm=(_branchModel&&_branchModel.byComp)?_branchModel.byComp[c.id]:null;
+    if(_wave&&_wave.elem[c.id]){ cm=cm||{i0:0,iinf:0,tau:1}; cm.waveId=c.id; }
     var cIabs=cm?Math.abs(cm.i0):0;
     var lane=_addLane([pA.clone(),new THREE.Vector3(center.x,pA.y,center.z),
                        new THREE.Vector3(center.x,pB.y,center.z),pB.clone()],
@@ -992,6 +1006,7 @@ App.AnalogyRenderer=(function(){
 
     /* 물 레인: 수로를 따라 직진, 휠 피트 아래 통과 */
     var lm=(_branchModel&&_branchModel.byComp)?_branchModel.byComp[c.id]:null;
+    if(_wave&&_wave.elem[c.id]){ lm=lm||{i0:0,iinf:0,tau:1}; lm.waveId=c.id; }
     var dirSign=_compLaneDir(c);
     _addLane([pA.clone(),inEnd.clone(),new THREE.Vector3(center.x,midY,center.z),
               outEnd.clone(),pB.clone()],dirSign,'comp',c,lm,I);
@@ -1222,7 +1237,12 @@ App.AnalogyRenderer=(function(){
         /* 수위 = 충전량 Q(t) ∝ (1 − i_C(t)/i_C0).
          *   낮은 수로 높이(loY, V_C=0)에서 유입 수로 높이(hiY, V_C=V)까지 차오른다. */
         var charge=0;
-        if(_playing && d.cur && Math.abs(d.cur.i0)>1e-15){
+        if(_playing && _wave && _wave.elem[d.comp.id]){
+          /* 엔진 파형: 수위 = |v_C(t)| / |v_C(끝)| (끝값이 0 이면 최대값 기준) */
+          var e=_wave.elem[d.comp.id], vEnd=Math.abs(e.v[e.v.length-1]);
+          if(vEnd<1e-9){ for(var q=0;q<e.v.length;q++) vEnd=Math.max(vEnd,Math.abs(e.v[q])); }
+          charge=vEnd>1e-12?Math.abs(_wave.sample(d.comp.id,t).v)/vEnd:0;
+        } else if(_playing && d.cur && Math.abs(d.cur.i0)>1e-15){
           var iC=_branchCurrentModel(d.cur,t);
           charge=1-Math.abs(iC)/Math.abs(d.cur.i0);
         }
@@ -1260,6 +1280,11 @@ App.AnalogyRenderer=(function(){
   /* 전류모델 m={i0,iinf,tau} 에서 시각 t의 전류(A) — _branchCurrent의 comp버전 */
   function _branchCurrentModel(m,t){
     if(!m) return 0;
+    /* 엔진 파형(시간 영역)이 있으면 그것을 표본화 — 진동·정류도 그대로 */
+    if(_wave){
+      if(m.waveId)   return _wave.sample(m.waveId,t).i;
+      if(m.waveWire) return _wave.sampleWire(m.waveWire,t);
+    }
     if(t<=0) return m.i0;
     return m.iinf + (m.i0-m.iinf)*Math.exp(-t/Math.max(m.tau,1e-12));
   }
@@ -1292,7 +1317,7 @@ App.AnalogyRenderer=(function(){
     var bm=_branchModel;
     var m=(bm&&bm.byComp)?bm.byComp[c.id]:null;
     /* 가지 전류 i(t) */
-    function iAt(){ if(!m) return 0; return t<=0?m.i0 : m.iinf+(m.i0-m.iinf)*Math.exp(-t/Math.max(m.tau,1e-12)); }
+    function iAt(){ return _branchCurrentModel(m,t); }
     if(c.type===TYPE.DC_SOURCE){
       /* 전원 전력 P=V·I. 공급(전류 −극→+극)이면 "공급", 흡수(역기전력)면 "충전" 표시 */
       var i=Math.abs(iAt()), V=Math.abs(c.value||0);
@@ -1325,7 +1350,8 @@ App.AnalogyRenderer=(function(){
       var C=c.value||1e-6;
       var Vinf=_capVinf(c);
       var Qinf=C*Vinf;
-      var Qt=(t<=0)?0:Qinf*(1-Math.exp(-t/Math.max(m?m.tau:1,1e-12)));
+      var Qt=(_wave&&_wave.elem[c.id]) ? C*Math.abs(_wave.sample(c.id,t).v)
+            : ((t<=0)?0:Qinf*(1-Math.exp(-t/Math.max(m?m.tau:1,1e-12))));
       var qx=Math.abs(Qt);
       var qs = qx<1e-9?(Qt*1e12).toFixed(1)+'pC' : qx<1e-6?(Qt*1e9).toFixed(1)+'nC'
              : qx<1e-3?(Qt*1e6).toFixed(1)+'µC' : qx<1?(Qt*1e3).toFixed(2)+'mC' : Qt.toFixed(3)+'C';
@@ -1940,7 +1966,24 @@ App.AnalogyRenderer=(function(){
       _branchModel=_buildStaticBranchModel();
     }
 
-    if(_domTau>1e-12){
+    /* ── 엔진 v2 파형 연결 ──
+     *   닫힘 뷰에 시간 영역 파형이 있으면 소자·도선·노드 모델에 파형 키를 달아
+     *   _branchCurrentModel/_portVt 가 표본화하게 한다 (진동·정류도 그대로 보인다). */
+    var srW=App.State.solverResult;
+    var cv=(srW&&srW.closed)?srW.closed:srW;
+    _wave=(cv&&cv.wave)?cv.wave:null;
+    if(_wave&&_branchModel){
+      Object.keys(_branchModel.byComp||{}).forEach(function(id){ if(_wave.elem[id]) _branchModel.byComp[id].waveId=id; });
+      Object.keys(_branchModel.byWire||{}).forEach(function(id){ if(_wave.wire[id]) _branchModel.byWire[id].waveWire=id; });
+      if(!_branchModel.byNode){ _branchModel.byNode={}; Object.keys(_wave.node).forEach(function(k){ _branchModel.byNode[k]={v0:_wave.node[k][0],vinf:_wave.node[k][_wave.steps],tau:_domTau}; }); }
+      if(!_branchModel.compNodes&&cv.componentNodes) _branchModel.compNodes=cv.componentNodes;
+      if(cv.poles&&cv.poles.domTau>0) _domTau=cv.poles.domTau;
+    }
+
+    if(_wave){
+      /* 파형 전체(5τ 또는 진동 3주기)를 화면상 SHOW_SPAN초에 */
+      _simSpeed=_wave.tMax/SHOW_SPAN;
+    } else if(_domTau>1e-12){
       /* 화면상 SHOW_SPAN초 동안 물리시간 5·_domTau 가 흐르도록 */
       _simSpeed=(5*_domTau)/SHOW_SPAN;
     } else {

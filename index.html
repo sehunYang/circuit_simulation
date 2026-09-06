@@ -148,6 +148,18 @@
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════
+     오실로스코프 패널 — 교류·정류·비선형 회로의 v(t)·i(t) (과도 그래프와 같은 자리)
+     ════════════════════════════════════════════════════════════════ -->
+<div id="scope-panel">
+  <div class="tp-title">
+    <span>파형 (오실로스코프)</span>
+    <span class="tp-close" id="scope-close-btn">✕</span>
+  </div>
+  <canvas id="scope-canvas" width="352" height="170"></canvas>
+  <div id="scope-legend"></div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
      값 입력 팝업 (소자 더블클릭 시)
      ════════════════════════════════════════════════════════════════ -->
 <div id="val-popup">
@@ -215,6 +227,7 @@
 <script src="src/js/render/capture.js"></script>                   <!-- SVG 선화 내보내기 (촬영) -->
 <script src="src/js/ui/interaction.js"></script>                   <!-- 포인터 제스처 FSM -->
 <script src="src/js/ui/transient-graph.js"></script>               <!-- 과도 응답 그래프 -->
+<script src="src/js/ui/scope.js"></script>                         <!-- 오실로스코프 (파형 v(t)·i(t)) -->
 <script src="src/js/ui/val-popup.js"></script>                     <!-- 값 입력 팝업 -->
 <script src="src/js/ui/prop-panel.js"></script>                    <!-- 속성 패널 -->
 <script src="src/js/ui/toast.js"></script>                         <!-- 전역 에러 토스트 -->

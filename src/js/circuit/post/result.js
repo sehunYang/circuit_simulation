@@ -172,6 +172,26 @@ App.Post.avgPower=function(view, id){
 };
 App.Post.fail=fail;
 
+/* ── 파형 통계 — 정상상태 한 주기(교류) 또는 마지막 1/4 구간(직류)의 peak·rms·avg ──
+ *   비선형+교류(정류)에서는 페이저가 무의미하므로 표시값은 여기서 나온다.
+ *   선형 교류에서는 페이저 값과 같다 (TD-4 로 검증). */
+App.Post.waveStats=function(view, id){
+  if(!view||!view.wave||!view.wave.elem[id]) return null;
+  var w=view.wave, e=w.elem[id], S=w.steps;
+  var n0;
+  if(view.acPhasor&&view.acPhasor.omega>0){
+    var P=2*Math.PI/view.acPhasor.omega; n0=0; while(n0<S&&w.t[n0]<w.tMax-P) n0++;
+  } else n0=Math.round(S*0.75);
+  function stats(a){
+    var peak=0,sum=0,sq=0,cnt=0;
+    for(var n=n0;n<=S;n++){ var v=a[n]; var m=Math.abs(v); if(m>peak)peak=m; sum+=v; sq+=v*v; cnt++; }
+    return{peak:peak, avg:sum/cnt, rms:Math.sqrt(sq/cnt)};
+  }
+  var si=stats(e.i), sv=stats(e.v), p=0, cnt=0;
+  for(var n=n0;n<=S;n++){ p+=e.v[n]*e.i[n]; cnt++; }
+  return{i:si, v:sv, pAvg:p/cnt, periodic:!!(view.acPhasor&&view.acPhasor.omega>0)};
+};
+
 /* ── 파형(wave) 조립 — 시간 영역 결과 → 소비자가 읽는 형태 ──
  *   wave = {
  *     t: Float64Array,  tMax, steps,

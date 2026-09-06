@@ -346,6 +346,11 @@ App.PropPanel=(function(){
         var Vpk=V!=null?Math.abs(V):null;
         var Irms=I!=null?Math.sqrt(Idc*Idc+Iac*Iac/2):null;
         var Vrms=V!=null?Math.sqrt(Vdc*Vdc+Vac*Vac/2):null;
+        /* 시간 영역 파형이 있으면 통계는 파형에서 (정류처럼 페이저가 무의미한 경우 포함) */
+        var ws=App.Post.waveStats?App.Post.waveStats(sr, comp.id):null;
+        if(ws){ Ipk=ws.i.peak; Vpk=ws.v.peak; Irms=ws.i.rms; Vrms=ws.v.rms; }
+        var hasNL=App.State.components.some(function(c2){return NONLINEAR_TYPES[c2.type];});
+        if(ws&&hasNL){ push('전류(평균)', _fmtCurrent(ws.i.avg)); push('전압(평균)', _fmtVoltage(ws.v.avg)); }
         push('전류(peak)',_fmtCurrent(Ipk));
         push('전류(RMS)', _fmtCurrent(Irms));
         push('전압(peak)',_fmtVoltage(Vpk));
@@ -367,7 +372,7 @@ App.PropPanel=(function(){
         if(comp.type===TYPE.AC_SOURCE||comp.type===TYPE.DC_SOURCE){
           /* 전원 평균전력 = DC 항 + AC 항(역률 포함). AC 전원의 DC 성분 전압과
            * DC 전원의 AC 성분 전압은 0 이므로 각자 한 항만 남는다. */
-          var Pavg=Math.abs(Vdc*Idc+(Vph.re*Iph.re+Vph.im*Iph.im)/2);
+          var Pavg=ws?Math.abs(ws.pAvg):Math.abs(Vdc*Idc+(Vph.re*Iph.re+Vph.im*Iph.im)/2);
           push('공급전력(평균)',_fmtPower(Pavg));
         }
       } else {

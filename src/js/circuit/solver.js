@@ -132,7 +132,10 @@ App.Solver=(function(){
     /* 편집 모드에서는 파형을 만들지 않는다 (그래프·실행·비유가 없으니 쓸 데가 없고,
      *   드래그 중 재해석이 잦다). 실행·비유 모드 진입 시 solveNow 가 다시 불린다. */
     var closed=_closedForMode();
-    App.State.solverResult=solve(App.State.components, App.State.wires, {closed:closed, noWave:!closed});
+    /* 예외: 비선형 + 교류(정류)는 패널 표시값이 파형에서만 나오므로 편집 모드에도 만든다 */
+    var comps=App.State.components;
+    var nlAC=comps.some(function(c){return NONLINEAR_TYPES[c.type];}) && comps.some(function(c){return c.type===TYPE.AC_SOURCE;});
+    App.State.solverResult=solve(comps, App.State.wires, {closed:closed, noWave:!closed&&!nlAC});
     App.Events.emit('solver:done');
     return App.State.solverResult;
   }

@@ -32,3 +32,19 @@
 /* KaTeX 수식 레이블 (그래프 오버레이) */
 .tg-formula-label .katex { font-size: 10px !important; }
 .tg-formula-label .katex-html { color: inherit; }
+
+/* ── 오실로스코프 패널 (파형: 교류·정류·비선형) — 과도 그래프와 같은 자리 ── */
+#scope-panel {
+  position: absolute; top: 12px; right: 12px; z-index: 25;
+  background: var(--bg-panel-deep); border: 1px solid var(--border-base);
+  border-radius: 12px; padding: 12px 14px; width: 380px;
+  max-width: calc(100vw - 24px); box-sizing: border-box;
+  backdrop-filter: var(--blur); box-shadow: var(--shadow-float);
+  display: none;
+}
+#scope-panel.visible { display: block; }
+#scope-panel .tp-title { font-size: 12px; color: var(--text-accent); font-weight: 700; letter-spacing: 1px;
+  border-bottom: 1px solid var(--border-dim); padding-bottom: 7px; margin-bottom: 10px; display: flex; justify-content: space-between; }
+#scope-canvas { width: 100%; display: block; border-radius: var(--radius-sm); background: #ffffff; border: 1px solid var(--border-dim); }
+#scope-legend { font-size: 10px; color: var(--text-dim); margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap; }
+#scope-legend b { font-weight: 600; }

@@ -138,8 +138,9 @@ App.Main=(function(){
     /* 속성 패널 */
     var pp=document.getElementById('prop-panel');
     if(pp&&hidden) pp.classList.remove('visible');
-    /* 과도 응답 그래프 */
+    /* 과도 응답 그래프 · 오실로스코프 */
     if(hidden && App.TransientGraph) App.TransientGraph.hide();
+    if(hidden && App.Scope) App.Scope.hide();
     /* undo/redo + 표시 토글 바 */
     var undoBar=document.getElementById('undo-bar');
     if(undoBar) undoBar.style.display=hidden?'none':'';
@@ -169,6 +170,7 @@ App.Main=(function(){
           App.State.mode='edit';
           _updateModeBar('edit');
           App.TransientGraph.hide();
+          if(App.Scope) App.Scope.hide();
           _setAnalogyUIHidden(false);   /* UI 복원 (#6) */
           App.Solver.solveNow();        /* 열림 상태로 즉시 재해석 */
           App.Events.emit('viewport:changed');
@@ -183,6 +185,7 @@ App.Main=(function(){
           App.Solver.solveNow();        /* 닫힘 상태 결과가 있어야 렌더러가 시작할 수 있다 */
           App.RunRenderer.start();
           App.TransientGraph.show();  /* DC 동적 소자 있으면 그래프 표시 */
+          if(App.Scope) App.Scope.show();   /* 교류·정류·비선형이면 오실로스코프 */
           return;
         }
 
@@ -433,6 +436,7 @@ App.Main=(function(){
 
     _buildSidebar();_setupModeBar();App.Events.emit('viewport:changed');
     App.TransientGraph.init();
+    if(App.Scope) App.Scope.init();
     App.ValPopup.init();
 
     /* ── 모바일 UX ── */

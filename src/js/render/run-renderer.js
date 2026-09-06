@@ -27,6 +27,7 @@ App.RunRenderer=(function(){
    *   (과거 round(|I|·8) 은 mA 대 전류에서 늘 1개라 밀도가 전류를 전혀
    *    반영하지 못했다) */
   function _particleCount(ratio, pathLen){
+    if(ratio<0.01) return 0;    /* 최대 전류의 1% 미만(5τ 뒤 e⁻⁵=0.7% 등)은 흐름 없음 */
     var n=Math.round(ratio*pathLen/ELECTRON_SPACING_MAX);
     return Math.max(1, Math.min(MAX_PARTICLES, n));
   }
@@ -130,11 +131,47 @@ App.RunRenderer=(function(){
     });
   }
 
+  /* ── 파형 재생 모드: 엔진 시간 영역 파형에서 도선 전류를 표본화 ──────
+   *   과도(RC·RL·RLC 진동)·교류·정류·혼합 모두 같은 경로.
+   *   속도·밀도 정규화 기준은 파형 전 구간의 최대 도선 전류(_waveMax) — 재생 중
+   *   기준이 흔들리지 않게 한 번만 계산한다. */
+  var WAVE_PLAY_SEC = 8;      /* DC 과도 파형 전체를 재생하는 화면상 시간(초) */
+  var _waveMax = 1e-15;
+  function _computeWaveMax(sr){
+    _waveMax = 1e-15;
+    if(!sr||!sr.wave) return;
+    Object.keys(sr.wave.wire).forEach(function(id){
+      var a=sr.wave.wire[id];
+      for(var k=0;k<a.length;k++){ var m=Math.abs(a[k]); if(m>_waveMax) _waveMax=m; }
+    });
+  }
+  function _updatePoolsWave(t, sr){
+    App.State.wires.forEach(function(wire){
+      var pool = _pools[wire.id]; if(!pool) return;
+      var instI = sr.wave.sampleWire(wire.id, t);       /* from→to 가 + */
+      var absI  = Math.abs(instI);
+      var newDir = instI >= 0 ? -1 : 1;                  /* 전자는 관례 전류의 반대 */
+      var ratio = absI / _waveMax;
+      var newSpd = absI > 1e-12 ? ELECTRON_SPEED_MIN + ratio * (ELECTRON_SPEED_MAX - ELECTRON_SPEED_MIN) : 0;
+      pool.particles.forEach(function(p){
+        if(p.dir !== newDir){ p.visible = false; p.dir = newDir; }
+        p.speed = newSpd;
+      });
+      var info = _wirePathInfo(wire);
+      var target = _particleCount(ratio, info ? info.len : 1);
+      while(pool.particles.length < target) pool.particles.push({t:Math.random(), speed:newSpd, dir:newDir, visible:true});
+      if(pool.particles.length > target) pool.particles.length = target;
+    });
+  }
+
   /* ── 파티클 풀 초기화 ── */
   function _initPools(){
     var sr = App.State.solverResult;
     _pools = {};
     if(!sr||!sr.valid) return;
+    _computeWaveMax(sr);
+    /* 파형 재생 중에는 풀을 다시 만들 때 시간도 처음으로 (전자 배치가 튀지 않게) */
+    if(sr.wave) _t = 0;
 
     var wc = sr.wireCurrents || {};
 
@@ -142,14 +179,24 @@ App.RunRenderer=(function(){
      * 속도는 전류 크기에 비례. 모든 도선 중 최대 전류로 정규화하면
      * 회로 내 상대적 전류 크기가 속도에 정확히 반영된다.
      * (예: R=L 같은 전류 → 같은 속도 보장) */
+    /* 파형 재생이면 도선의 '전 구간 최대 전류'가 기준 — 정상상태 전류가 0 인
+     *   축전기 가지도 과도 구간에는 전자가 흘러야 한다 */
+    function wireRef(wire){
+      if(sr.wave&&sr.wave.wire[wire.id]){
+        var a=sr.wave.wire[wire.id], m=0;
+        for(var k=0;k<a.length;k++){ var v=Math.abs(a[k]); if(v>m) m=v; }
+        return m;
+      }
+      return _wireCurrentMag(wire, sr, wc);
+    }
     var maxI = 1e-15;
     App.State.wires.forEach(function(wire){
-      var I = _wireCurrentMag(wire, sr, wc);
+      var I = wireRef(wire);
       if(I > maxI) maxI = I;
     });
 
     App.State.wires.forEach(function(wire){
-      var I = _wireCurrentMag(wire, sr, wc);
+      var I = wireRef(wire);
       if(Math.abs(I)<1e-15) return;
 
       /* ── 속도: 전류 크기에 비례 (전위차 기반 아님) ──────────────
@@ -317,21 +364,36 @@ App.RunRenderer=(function(){
     var sr = App.State.solverResult;
     var VIS_BASE = 1.0;   /* 기준 주파수: 1Hz는 원래 속도 유지 */
     var VIS_EXP  = 0.25;  /* 지수: 0=모두 동일, 1=원래 주파수 그대로 */
+    var tPhys = null;     /* 파형 재생 시 물리 시간 */
     if(sr && sr.acPhasor){
       var realFreq = sr.acPhasor.omega / (2 * Math.PI);
       var visFreq  = VIS_BASE * Math.pow(realFreq / VIS_BASE, VIS_EXP);
       var scale    = visFreq / realFreq;
       _t += dt * scale;
+    } else if(sr && sr.wave){
+      /* DC 과도: 파형 전체(5τ·진동 3주기)를 WAVE_PLAY_SEC 초에 재생한 뒤 끝값 유지 */
+      _t += dt * (sr.wave.tMax / WAVE_PLAY_SEC);
     } else {
       _t += dt;  /* DC: 실시간 누산 */
+    }
+    if(sr && sr.wave){
+      if(sr.acPhasor){
+        /* 교류: 파형의 마지막 한 주기를 순환 (앞부분은 켜지는 과도) */
+        var P = 2*Math.PI/sr.acPhasor.omega;
+        tPhys = sr.wave.tMax - P + (_t % P);
+      } else {
+        tPhys = Math.min(_t, sr.wave.tMax);
+      }
+      App.Events.emit('run:time', tPhys);
     }
 
     var vs0=App.Geo.viewSize();
     _ctx.clearRect(0,0,vs0.w,vs0.h);
 
     if(sr&&sr.valid){
-      /* AC 모드: 스케일된 _t로 순시 전류 계산 */
-      if(sr.acPhasor) _updatePoolsAC(_t, sr);
+      /* 파형이 있으면 그것으로(과도·교류·정류 공통), 없으면 페이저(선형 AC) */
+      if(sr.wave) _updatePoolsWave(tPhys, sr);
+      else if(sr.acPhasor) _updatePoolsAC(_t, sr);
       _updateParticles(dt);
       _drawParticles();
     } else {

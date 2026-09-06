@@ -801,6 +801,7 @@ App.TransientGraph=(function(){
     var PAD={left:52, right:14, top:12, bottom:28};
     var gW=W-PAD.left-PAD.right;
     var gH=H-PAD.top-PAD.bottom;
+    _plot={x0:PAD.left, x1:PAD.left+gW, y0:PAD.top, y1:PAD.top+gH, dpr:dpr};   /* 시간 커서용 */
 
     /* ── 배경 ── 수능 그래프 문항과 같이 흰 지면 위에 그린다 */
     _ctx.fillStyle='#ffffff';
@@ -1180,6 +1181,23 @@ App.TransientGraph=(function(){
         _ctx.restore();
       });
     }
+    /* 시간 커서용 스냅샷 (실행 모드 재생 시간에 맞춰 세로선을 얹는다) */
+    try{ _ctx.setTransform(1,0,0,1,0,0); _snapshot=_ctx.getImageData(0,0,_cv.width,_cv.height); }catch(e){ _snapshot=null; }
+    _ctx.setTransform(dpr,0,0,dpr,0,0);
+    if(_cursorT!=null) _drawCursor(_cursorT);
+  }
+
+  /* ── 실행 모드 시간 커서 ── */
+  var _plot=null, _snapshot=null, _cursorT=null;
+  function _drawCursor(t){
+    _cursorT=t;
+    if(!_running||!_snapshot||!_plot||!_ctx) return;
+    var tMax=_tMax>0?_tMax:1;
+    _ctx.setTransform(1,0,0,1,0,0); _ctx.putImageData(_snapshot,0,0);
+    var dpr=_plot.dpr||1; _ctx.setTransform(dpr,0,0,dpr,0,0);
+    var x=_plot.x0+(_plot.x1-_plot.x0)*Math.max(0,Math.min(1,t/tMax));
+    _ctx.save(); _ctx.strokeStyle='rgba(180,83,9,0.95)'; _ctx.lineWidth=2; _ctx.setLineDash([4,3]);
+    _ctx.beginPath(); _ctx.moveTo(x,_plot.y0); _ctx.lineTo(x,_plot.y1); _ctx.stroke(); _ctx.restore();
   }
 
   /* ── 공개 API ── */
@@ -1254,6 +1272,8 @@ App.TransientGraph=(function(){
   }
 
   function init(){
+    /* 실행 모드 재생 시간 → 그래프 위 세로 커서 */
+    App.Events.on('run:time', function(t){ if(_running) _drawCursor(t); });
     var closeBtn=document.getElementById('tp-close-btn');
     if(closeBtn) closeBtn.addEventListener('click',function(){
       hide();

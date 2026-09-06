@@ -68,6 +68,7 @@ async function blobCount(p){
     return n; });
 }
 
+async function inkCount(p,sel,pred){ return p.evaluate((sel,predSrc)=>{const cv=document.querySelector(sel),c=cv.getContext('2d');const d=c.getImageData(0,0,cv.width,cv.height).data;const f=new Function('r','g','b','a','return '+predSrc);let n=0;for(let i=0;i<d.length;i+=4){if(f(d[i],d[i+1],d[i+2],d[i+3]))n++;}return n;},sel,pred); }
 (async()=>{
   const b=await L.launch(); const p=await L.newPage(b,1100,690,1);
   p.on('pageerror',e=>chk('pageerror 없음',false,e.message));
@@ -330,6 +331,56 @@ async function blobCount(p){
   chk('BJT 패널: 동작 영역 배지(포화) · I_C', /포화/.test(panelQ)&&/I_C/.test(panelQ), panelQ.slice(0,200));
   await L.select(p,'d'); const panelD=await p.evaluate(()=>document.getElementById('prop-content').textContent);
   chk('다이오드 패널: 순방향 도통', /순방향 도통/.test(panelD), panelD.slice(0,160));
+  await L.mode(p,'edit');   /* 다음 블록이 모드 전환을 다시 하도록 편집으로 복귀 */
+  /* ══ D 단계: 파형 재생 · 오실로스코프 · 그래프 커서 · 비유 모드 파형 ══ */
+  /* 1. RC 과도 재생: 전자가 처음엔 많고(120mA) 8초 뒤엔 사라짐(0mA) */
+  await L.build(p,C.rc.comps,C.rc.wires); await L.focus(p,51,50.5,1.6);
+  await L.mode(p,'run'); await L.sleep(300);
+  const early=await inkCount(p,'#canvas-anim','a>0');
+  const info=await p.evaluate(()=>{const sr=window.App.State.solverResult; return {wave:!!sr.wave, tMax:sr.wave&&sr.wave.tMax, poles:sr.poles&&sr.poles.taus};});
+  chk('RC 실행: wave 존재, tMax=5τ=50ms', info.wave&&Math.abs(info.tMax-0.05)<1e-6, JSON.stringify(info));
+  /* 그래프 커서(주황 점선) 존재 — 그래프가 그려지고 커서가 얹힐 때까지 잠깐 */
+  await L.sleep(700);
+  const cursor=await inkCount(p,'#transient-canvas','r>150&&g<170&&b<120&&(r-b)>60&&a>100');
+  chk('과도 그래프에 시간 커서(주황) 표시', cursor>10, 'px='+cursor);
+  await L.sleep(9000);
+  const late=await inkCount(p,'#canvas-anim','a>0');
+  chk('RC 실행: 충전이 끝나면 전자 이동 사라짐 (초기 '+early+' → 말기 '+late+')', early>50&&late<early*0.3, 'early='+early+' late='+late);
+    await L.mode(p,'edit');
+
+  /* 2. 반파 정류 + 평활 축전기: 실행 모드에서 오실로스코프 표시 */
+  await L.build(p,
+    [{key:'ac',type:'AC_SOURCE',gx:47,gy:50,rot:90,value:10,value2:60},
+     {key:'d', type:'DIODE',gx:49,gy:48,rot:0,value:0},
+     {key:'ja',type:'JUNCTION_3',gx:51,gy:48,rot:0,value:0},
+     {key:'r', type:'RESISTOR',gx:53,gy:50,rot:90,value:1000},
+     {key:'c', type:'CAPACITOR',gx:51,gy:50,rot:90,value:100e-6},
+     {key:'jb',type:'JUNCTION_3',gx:51,gy:52,rot:180,value:0}],
+    [['ac','L','d','L','V-first'],['d','R','ja','L','H-first'],['ja','R','r','L','H-first'],['ja','B','c','L','H-first'],
+     ['c','R','jb','B','H-first'],['r','R','jb','L','V-first'],['jb','R','ac','R','V-first']]);
+  await L.focus(p,50,50,1.5);
+  await L.mode(p,'run'); await L.sleep(800);
+  const scopeVis=await p.evaluate(()=>document.getElementById('scope-panel').classList.contains('visible'));
+  chk('정류 회로 실행 → 오실로스코프 패널 표시', scopeVis, 'visible='+scopeVis);
+  const scopeInk=await inkCount(p,'#scope-canvas','(r<100&&g<120&&b>150&&a>0)||(r>150&&g<120&&b<60&&a>0)');
+  chk('오실로스코프에 파형 픽셀', scopeInk>200, 'px='+scopeInk);
+  await L.select(p,'r');
+  const panelR=await p.evaluate(()=>document.getElementById('prop-content').textContent);
+  chk('정류 저항 패널: 전압(평균)·전류(평균) 행 (파형 통계)', /전압\(평균\)/.test(panelR)&&/전류\(평균\)/.test(panelR), panelR.slice(0,220));
+  const stats=await p.evaluate(()=>{const sr=window.App.State.solverResult; const r=window.App.State.components.find(c=>c.type==='RESISTOR'); return window.App.Post.waveStats(sr,r.id);});
+  chk('평활 후 저항 전압 평균 > 반파 평균 (V_p−V_F)/π=3V', stats&&stats.v.avg>5, JSON.stringify(stats&&stats.v));
+    await L.mode(p,'edit');
+
+  /* 3. 비유 모드 RLC (R=5): 파형 연결, HUD τ, 오류 없음 */
+  const rlc=JSON.parse(JSON.stringify(C.rlc)); rlc.comps[1].value=5;
+  await L.build(p,rlc.comps,rlc.wires); await L.mode(p,'analogy'); await L.sleep(1500);
+  await p.evaluate(()=>document.getElementById('analogy-play-btn').click()); await L.sleep(2500);
+  const hud=await p.evaluate(()=>({t:document.getElementById('analogy-hud-t').textContent,tau:document.getElementById('analogy-hud-tau').textContent}));
+  chk('비유 RLC: HUD τ = 4.00ms (정확 극점 1/α, α=250)', /4\.00\s*ms/.test(hud.tau), JSON.stringify(hud));
+  await p.mouse.move(600,340); for(let i=0;i<2;i++){ await p.mouse.wheel({deltaY:-100}); await L.sleep(200); }
+  await L.sleep(300);
+  await L.mode(p,'edit');
+
   await b.close();
   let fail=0; R.forEach(x=>{ if(!x.ok) fail++; console.log((x.ok?'✓ ':'✗ ')+x.name+(x.ok?'':'   '+x.detail)); });
   console.log('─'.repeat(50)); console.log('검증 '+R.length+'건 / 실패 '+fail+'건'); process.exit(fail?1:0);
