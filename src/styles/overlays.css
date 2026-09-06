@@ -19,11 +19,3 @@
 }
 #conn-hint.visible { opacity: 1; }
 
-/* 뷰포트 표시 — 좌하단은 undo-bar 가 쓰므로 우하단에 둔다
- * (형제 프로젝트 mechanics_simulation 의 #zoom-indicator 와 같은 자리) */
-#info-overlay {
-  position: absolute; bottom: 8px; right: 8px; font-size: 10px; color: var(--text-dim);
-  font-family: var(--font); z-index: 5; pointer-events: none; letter-spacing: 0.5px;
-  background: var(--bg-glass); border: 1px solid var(--border-dim);
-  border-radius: var(--radius-sm); padding: 3px 7px; backdrop-filter: blur(8px);
-}

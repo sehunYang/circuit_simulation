@@ -24,8 +24,6 @@ App.GridRenderer=(function(){
     for(var c=sC;c<eC;c++){
       for(var r=sR;r<eR;r++) _ctx.fillRect(c*cp+vt.offsetX-1,r*cp+vt.offsetY-1,2,2);
     }
-    var info=document.getElementById('info-overlay');
-    if(info) info.textContent='scale:'+vt.scale.toFixed(2)+'  off:('+Math.round(vt.offsetX)+','+Math.round(vt.offsetY)+')';
   }
   return{init,render};
 })();
