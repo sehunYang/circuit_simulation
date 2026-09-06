@@ -268,6 +268,68 @@ async function blobCount(p){
   chk('표기 토글 → 접지 팔레트 항목 표시', railVisible!=='none', railVisible);
   chk('콘솔·페이지 오류 없음', errs.length===0, errs.slice(0,3).join(' | '));
 
+  /* ══ B 단계: 그룹 선택 팝업 · 전구 광량 · 다이오드/BJT 패널 ══ */
+  /* 1. R 그룹 버튼 클릭 → 팝업 → '전구' 선택 → 중앙 배치 */
+  const bc1=await p.evaluate(()=>{const S=window.App.State; while(S.components.length) S.removeComponent(S.components[0].id);
+    const r=document.getElementById('sidebar-item-R').getBoundingClientRect(); return [r.left+r.width/2, r.top+r.height/2];});
+  await p.mouse.click(bc1[0],bc1[1]); await L.sleep(150);
+  const b1=await p.evaluate(async()=>{
+    const S=window.App.State;
+    const pop=document.getElementById('sb-picker');
+    const opts=pop?Array.from(pop.querySelectorAll('.sb-pick')).map(x=>x.textContent):null;
+    if(pop) pop.querySelectorAll('.sb-pick')[1].click();   /* 전구 */
+    await new Promise(r=>setTimeout(r,50));
+    return {popup:!!pop, opts, placed:S.components.map(c=>c.type), label:document.querySelector('#sidebar-item-R .s-label').textContent};
+  });
+  chk('R 버튼 클릭 → 저항/전구 선택 팝업', b1.popup&&b1.opts&&b1.opts.length===2, JSON.stringify(b1));
+  chk('전구 선택 → 배치 + 버튼 라벨 갱신', b1.placed.indexOf('BULB')>=0&&b1.label==='전구', JSON.stringify(b1));
+
+  /* 2. 반도체 그룹 팝업 옵션 3개 */
+  const bc2=await p.evaluate(()=>{const r=document.getElementById('sidebar-item-SEMI').getBoundingClientRect(); return [r.left+r.width/2, r.top+r.height/2];});
+  await p.mouse.click(bc2[0],bc2[1]); await L.sleep(150);
+  const b2=await p.evaluate(async()=>{
+    const pop=document.getElementById('sb-picker');
+    const opts=pop?Array.from(pop.querySelectorAll('.sb-pick')).map(x=>x.textContent):null;
+    if(pop) pop.remove();
+    return opts;
+  });
+  chk('반도체 버튼 → 다이오드/npn/pnp 3개', b2&&b2.length===3, JSON.stringify(b2));
+
+  /* 3. 전구 회로: 12V + 스위치(자동) + 전구 100Ω/1W → 실행 모드에서 광량 픽셀 */
+  await L.build(p,
+    [{key:'dc',type:'DC_SOURCE',gx:48,gy:50,rot:90,value:12},
+     {key:'b', type:'BULB',gx:51,gy:48,rot:0,value:100,value2:1}],
+    [['dc','L','b','L','V-first'],['b','R','dc','R','V-first']]);
+  await L.focus(p,50,50,1.7);
+  await L.mode(p,'run'); await L.sleep(400);
+  const glow=await p.evaluate(()=>{
+    const cv=document.getElementById('canvas-main'),c=cv.getContext('2d'),vt=window.App.State.viewTransform,dpr=window.devicePixelRatio||1;
+    const x=(51.5*CELL_SIZE*vt.scale+vt.offsetX)*dpr, y=(48.5*CELL_SIZE*vt.scale+vt.offsetY)*dpr;
+    const d=c.getImageData(Math.round(x-14*dpr),Math.round(y-14*dpr),Math.round(28*dpr),Math.round(28*dpr)).data;
+    let warm=0; for(let i=0;i<d.length;i+=4){ if(d[i+3]>0&&d[i]>200&&d[i+2]<150) warm++; } return warm;
+  });
+  chk('실행 모드 전구 광량(노란 픽셀) 존재', glow>50, 'warm px='+glow);
+  await L.select(p,'b');
+  const panelB=await p.evaluate(()=>document.getElementById('prop-content').textContent);
+  chk("전구 패널: 소비전력 1.44W · 밝기 144 %", /1\.44 W/.test(panelB)&&/144 %/.test(panelB), panelB.slice(0,160));
+  await L.mode(p,'edit');
+
+  /* 4. 다이오드 + BJT 회로 패널 · 촬영 */
+  await L.build(p,
+    [{key:'dc',type:'DC_SOURCE',gx:46,gy:50,rot:90,value:12},
+     {key:'rb',type:'RESISTOR',gx:48,gy:47,rot:0,value:10000},
+     {key:'d', type:'DIODE',gx:50,gy:47,rot:0,value:0},
+     {key:'q', type:'NPN',gx:52,gy:49,rot:0,value:100},
+     {key:'rc',type:'RESISTOR',gx:52,gy:47,rot:90,value:1000},
+     {key:'ja',type:'JUNCTION_3',gx:47,gy:47,rot:0,value:0}],
+    [['dc','L','ja','L','V-first'],['ja','R','rb','L','H-first'],['rb','R','d','L','H-first'],['d','R','q','L','H-first'],
+     ['ja','B','rc','L','V-first'],['rc','R','q','T','H-first'],['q','B','dc','R','V-first']]);
+  await L.focus(p,49.5,49,1.6);
+  await L.mode(p,'run'); await L.sleep(300);
+  await L.select(p,'q'); const panelQ=await p.evaluate(()=>document.getElementById('prop-content').textContent);
+  chk('BJT 패널: 동작 영역 배지(포화) · I_C', /포화/.test(panelQ)&&/I_C/.test(panelQ), panelQ.slice(0,200));
+  await L.select(p,'d'); const panelD=await p.evaluate(()=>document.getElementById('prop-content').textContent);
+  chk('다이오드 패널: 순방향 도통', /순방향 도통/.test(panelD), panelD.slice(0,160));
   await b.close();
   let fail=0; R.forEach(x=>{ if(!x.ok) fail++; console.log((x.ok?'✓ ':'✗ ')+x.name+(x.ok?'':'   '+x.detail)); });
   console.log('─'.repeat(50)); console.log('검증 '+R.length+'건 / 실패 '+fail+'건'); process.exit(fail?1:0);

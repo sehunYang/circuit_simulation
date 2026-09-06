@@ -154,9 +154,15 @@ App.Symbols=(function(){
   /* 소자 값 → 표시 문자열 (SI 접두어 자동 선택) */
   function _makeLabel(comp){
     if(comp.type===TYPE.LABEL) return (comp.label&&comp.label.trim())||'VCC';   /* 레일 이름 */
+    if(comp.type===TYPE.NPN) return 'npn';
+    if(comp.type===TYPE.PNP) return 'pnp';
+    if(comp.type===TYPE.DIODE||comp.type===TYPE.SWITCH||comp.type===TYPE.GROUND) return '';
     var v=comp.value; if(v==null) return '';
     switch(comp.type){
       case TYPE.DC_SOURCE: return v+' V';
+      case TYPE.BULB:
+        if(v>=1e3) return (v/1e3).toFixed(v%1e3?1:0)+' kΩ';
+        return v+' Ω';
       case TYPE.AC_SOURCE: return v+' V~';
       case TYPE.RESISTOR:
         if(v>=1e6) return (v/1e6).toFixed(v%1e6?1:0)+' MΩ';
@@ -218,7 +224,61 @@ App.Symbols=(function(){
     ctx.beginPath(); ctx.arc(cx,cy-r*.40,r*.15,0,Math.PI*2); ctx.stroke();
   }
 
+  /* ── 전구: 원 + X (수능 지면 규격 ⊗) ────────────────────────────── */
+  function drawBulb(ctx,cx,cy,r){
+    var R=r*.42, k=R*Math.SQRT1_2;
+    ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx-k,cy-k); ctx.lineTo(cx+k,cy+k);
+    ctx.moveTo(cx-k,cy+k); ctx.lineTo(cx+k,cy-k);
+    ctx.moveTo(cx-r,cy); ctx.lineTo(cx-R,cy);
+    ctx.moveTo(cx+R,cy); ctx.lineTo(cx+r,cy);
+    ctx.stroke();
+  }
+
+  /* ── 다이오드: 삼각형(애노드, 좌) → 막대(캐소드, 우) ───────────── */
+  function drawDiode(ctx,cx,cy,r){
+    var h=r*.34, w=r*.36;
+    ctx.beginPath();
+    ctx.moveTo(cx-r,cy); ctx.lineTo(cx-w,cy);
+    ctx.moveTo(cx+w,cy); ctx.lineTo(cx+r,cy);
+    ctx.moveTo(cx+w,cy-h); ctx.lineTo(cx+w,cy+h);     // 캐소드 막대
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx-w,cy-h); ctx.lineTo(cx+w,cy); ctx.lineTo(cx-w,cy+h); ctx.closePath();
+    ctx.fill();
+  }
+
+  /* ── BJT: 원 + 베이스 막대 + 컬렉터(위)·이미터(아래) 사선, 이미터 화살표 ──
+   *   포트: L=베이스, T=컬렉터, B=이미터. npn 화살표는 밖으로, pnp 는 안으로. */
+  function drawBJT(ctx,cx,cy,r,pnp){
+    var R=r*.55;
+    ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.stroke();
+    var bx=cx-r*.12, bh=r*.30;              // 베이스 막대
+    ctx.beginPath();
+    ctx.moveTo(cx-r,cy); ctx.lineTo(bx,cy);               // 베이스 단자
+    ctx.moveTo(bx,cy-bh); ctx.lineTo(bx,cy+bh);           // 막대
+    ctx.moveTo(bx,cy-bh*.5); ctx.lineTo(cx+r*.30,cy-R*.9); ctx.lineTo(cx+r*.30,cy-r);   // 컬렉터
+    ctx.moveTo(bx,cy+bh*.5); ctx.lineTo(cx+r*.30,cy+R*.9); ctx.lineTo(cx+r*.30,cy+r);   // 이미터
+    ctx.stroke();
+    /* 이미터 화살표 */
+    var ex0=bx, ey0=cy+bh*.5, ex1=cx+r*.30, ey1=cy+R*.9;
+    var ang=Math.atan2(ey1-ey0,ex1-ex0), al=r*.22;
+    var tipx, tipy, dir;
+    if(pnp){ tipx=ex0+(ex1-ex0)*.25; tipy=ey0+(ey1-ey0)*.25; dir=ang+Math.PI; }
+    else   { tipx=ex1-(ex1-ex0)*.05; tipy=ey1-(ey1-ey0)*.05; dir=ang; }
+    ctx.beginPath();
+    ctx.moveTo(tipx,tipy);
+    ctx.lineTo(tipx-al*Math.cos(dir-0.45), tipy-al*Math.sin(dir-0.45));
+    ctx.lineTo(tipx-al*Math.cos(dir+0.45), tipy-al*Math.sin(dir+0.45));
+    ctx.closePath(); ctx.fill();
+  }
+
   var DRAWERS={};
+  DRAWERS[TYPE.BULB]      =function(ctx,cx,cy,r){ drawBulb(ctx,cx,cy,r); };
+  DRAWERS[TYPE.DIODE]     =function(ctx,cx,cy,r){ drawDiode(ctx,cx,cy,r); };
+  DRAWERS[TYPE.NPN]       =function(ctx,cx,cy,r){ drawBJT(ctx,cx,cy,r,false); };
+  DRAWERS[TYPE.PNP]       =function(ctx,cx,cy,r){ drawBJT(ctx,cx,cy,r,true); };
   DRAWERS[TYPE.SWITCH]    =function(ctx,cx,cy,r){ drawSwitch(ctx,cx,cy,r); };
   DRAWERS[TYPE.GROUND]    =function(ctx,cx,cy,r){ drawGround(ctx,cx,cy,r); };
   DRAWERS[TYPE.LABEL]     =function(ctx,cx,cy,r){ drawRailLabel(ctx,cx,cy,r); };

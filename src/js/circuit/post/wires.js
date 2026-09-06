@@ -28,10 +28,11 @@ App.Post.wireChannels=function(nl, getCompI, K){
   function isPass(c){ return !!c && (NODE_TYPES[c.type] || nl.passthrough[c.id]); }
   function zeros(){ var a=new Array(K); for(var i=0;i<K;i++) a[i]=0; return a; }
 
+  /* getCompI(c, portId) → 그 포트로 소자에 '들어가는' 전류 채널 (또는 null).
+   *   도선 전류 + 는 from→to. 도선의 to 가 이 포트면 유입 = +, from 이면 −. */
   function fromComp(c, portId, isFrom){
-    var arr=getCompI(c); if(!arr) return null;
-    var ports=App.Netlist.portsOf(c);
-    var s=(ports.indexOf(portId)===0?-1:1)*(isFrom?1:-1);
+    var arr=getCompI(c, portId); if(!arr) return null;
+    var s=isFrom?-1:1;
     var out=new Array(K); for(var i=0;i<K;i++) out[i]=s*arr[i];
     return out;
   }

@@ -53,12 +53,22 @@ App.Post.buildView=function(nl, devs, x, ac, omega){
     if(d&&d.disabled){ dc[c.id].i=0; if(isAC) acc[c.id].i={re:0,im:0}; }
   });
 
-  /* 도선 채널: [dc] 또는 [dc, re, im] */
+  /* 포트별 유입 전류 (BJT 는 단자마다 다르다) */
+  var portI={};
+  comps.forEach(function(c){
+    var d=devById[c.id]; if(!d) return;
+    portI[c.id]=d.portCurrents(x);
+  });
+
+  /* 도선 채널: [dc] 또는 [dc, re, im] — 포트로 '들어가는' 전류 */
   var K=isAC?3:1;
-  var wc=App.Post.wireChannels(nl, function(c){
+  var wc=App.Post.wireChannels(nl, function(c, portId){
     if(NODE_TYPES[c.type]||nl.passthrough[c.id]) return null;   /* 연결점·닫힌 스위치: 필링 대상 */
     if(c.type===TYPE.SWITCH) return [0,0,0].slice(0,K);          /* 열린 스위치: 0 */
-    var a=[dc[c.id].i]; if(isAC){ a.push(acc[c.id].i.re, acc[c.id].i.im); }
+    var d=devById[c.id]; if(!d) return null;
+    var pi=portI[c.id][portId]; if(pi==null) return null;
+    var a=[pi];
+    if(isAC){ var pa=d.portCurrentsAC(ac.xr,ac.xi,omega)[portId]||{re:0,im:0}; a.push(pa.re, pa.im); }
     return a;
   }, K);
   /* 닫힌 스위치 전류 채우기 */
@@ -107,8 +117,11 @@ App.Post.buildView=function(nl, devs, x, ac, omega){
     componentVoltages:compV, branchCurrents:compI,
     wireCurrents:wireI, wireSignedI:wireSignedI,
     componentNodes:cn, acPhasor:null,
-    /* 원시 성분 (표시 규약과 무관한 물리량) */
-    dc:{compI:dcCompI, compV:dcCompV, nodeV:(function(){var o={};for(var k=0;k<nl.nodeCount;k++)o[k]=V(k);return o;})()},
+    /* 원시 성분 (표시 규약과 무관한 물리량)
+     *   out[id]  : 소자 outputs 전체 (P, brightness, region, iB/iC/iE, vBE/vCE …)
+     *   portI[id]: 포트별 유입 전류 */
+    dc:{compI:dcCompI, compV:dcCompV, out:dc, portI:portI,
+        nodeV:(function(){var o={};for(var k=0;k<nl.nodeCount;k++)o[k]=V(k);return o;})()},
   };
   if(isAC){
     function inst(ph, dcm, id, t){

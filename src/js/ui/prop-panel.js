@@ -20,16 +20,23 @@ App.PropPanel=(function(){
     CAPACITOR:'축전기',INDUCTOR:'인덕터',
     JUNCTION_3:'3방향 교차',JUNCTION_4:'4방향 교차',
     SWITCH:'스위치',GROUND:'접지',LABEL:'레일 라벨',
+    BULB:'전구',DIODE:'p-n 접합 다이오드',NPN:'트랜지스터 (npn)',PNP:'트랜지스터 (pnp)',
   };
 
   // {label, key, unit, displayScale, displayFixed, min, max, step}
+  //   rint(내부저항) 은 값이 없으면 0 으로 취급한다 (예전 회로 호환)
+  var RINT={label:'내부저항', key:'rint', unit:'Ω', ds:1, df:2, min:0, max:1e6, step:0.1, optional:true};
   var FIELDS={
-    DC_SOURCE:[{label:'전압',    key:'value', unit:'V',  ds:1,   df:1, min:0,     max:9999, step:1}],
+    DC_SOURCE:[{label:'전압',    key:'value', unit:'V',  ds:1,   df:1, min:0,     max:9999, step:1}, RINT],
     AC_SOURCE:[{label:'전압',    key:'value', unit:'V',  ds:1,   df:1, min:0,     max:9999, step:1},
-               {label:'주파수', key:'value2',unit:'Hz', ds:1,   df:0, min:1,     max:1e6,  step:1}],
+               {label:'주파수', key:'value2',unit:'Hz', ds:1,   df:0, min:1,     max:1e6,  step:1}, RINT],
     RESISTOR: [{label:'저항',   key:'value', unit:'Ω',  ds:1,   df:0, min:0.001, max:1e9,  step:1}],
+    BULB:     [{label:'저항',   key:'value', unit:'Ω',  ds:1,   df:0, min:0.001, max:1e9,  step:1},
+               {label:'정격전력',key:'value2',unit:'W', ds:1,   df:2, min:0.001, max:1e4,  step:0.1}],
     CAPACITOR:[{label:'전기용량',key:'value',unit:'µF', ds:1e6, df:2, min:0.001, max:1e6,  step:1}],
     INDUCTOR: [{label:'인덕턴스',key:'value',unit:'mH', ds:1e3, df:2, min:0.001, max:1e6,  step:1}],
+    NPN:      [{label:'전류이득 β',key:'value',unit:'', ds:1,   df:0, min:1,     max:1000, step:1}],
+    PNP:      [{label:'전류이득 β',key:'value',unit:'', ds:1,   df:0, min:1,     max:1000, step:1}],
   };
 
   // ── 측정값 포맷 — 크기에 따라 단위 자동 선택 ──
@@ -115,7 +122,8 @@ App.PropPanel=(function(){
 
     /* ── 물리량 입력 ── */
     (FIELDS[comp.type]||[]).forEach(function(f){
-      var raw=comp[f.key];if(raw==null) return;
+      var raw=comp[f.key];
+      if(raw==null){ if(!f.optional) return; comp[f.key]=0; }
       var row=document.createElement('div');row.className='pp-row';
       var k=document.createElement('span');k.className='pp-key';k.textContent=f.label+' ('+f.unit+')';
 
@@ -291,6 +299,35 @@ App.PropPanel=(function(){
       push('상태', _makeBadge(closedSw?'닫힘':'열림', ''));
       push('전류', _fmtCurrent(I));
       push('양단 전압', _fmtVoltage(V));
+      return rows;
+    }
+    var out=(sr.dc&&sr.dc.out)?sr.dc.out[comp.id]:null;
+    /* 전구: 전류·전압·전력·밝기 (밝기 = P/정격) */
+    if(comp.type===TYPE.BULB&&out&&!isAC){
+      push('전류', _fmtCurrent(I));
+      push('전압강하', _fmtVoltage(V));
+      push('소비전력', _fmtPower(Math.abs(out.P||0)));
+      var br=Math.max(0,out.brightness||0);
+      push('밝기', _makeBadge(br<0.02?'꺼짐':(Math.round(Math.min(br,1.5)*100)+' %'+(br>1.2?' (과부하)':'')),''));
+      return rows;
+    }
+    /* 다이오드: 순방향/역방향 상태 */
+    if(comp.type===TYPE.DIODE&&out){
+      push('전류', _fmtCurrent(I));
+      push('양단 전압 (애노드−캐소드)', _fmtVoltage(out.v));
+      push('상태', _makeBadge(out.region==='forward'?'순방향 도통':'역방향 차단',''));
+      return rows;
+    }
+    /* BJT: 단자 전류·접합 전압·동작 영역 */
+    if((comp.type===TYPE.NPN||comp.type===TYPE.PNP)&&out){
+      var REG={cutoff:'차단 (OFF)',active:'활성 (증폭)',saturation:'포화 (ON)'};
+      push('동작 영역', _makeBadge(REG[out.region]||out.region,''));
+      push('I_B (베이스)', _fmtCurrent(out.iB));
+      push('I_C (컬렉터)', _fmtCurrent(out.iC));
+      push('I_E (이미터)', _fmtCurrent(out.iE));
+      push('V_BE', _fmtVoltage(out.vBE));
+      push('V_CE', _fmtVoltage(out.vCE));
+      if(Math.abs(out.iB)>1e-12) push('I_C / I_B', (out.iC/out.iB).toFixed(1)+(out.region==='active'?' ≈ β':''));
       return rows;
     }
       if(isAC){

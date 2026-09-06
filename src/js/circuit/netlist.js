@@ -86,7 +86,8 @@ App.Netlist=(function(){
         var name=(c.label&&c.label.trim())||'VCC';
         if(labelSlot[name]==null) labelSlot[name]=s0; else uf.union(labelSlot[name],s0);
       } else if(c.type===TYPE.SWITCH){
-        if(closed){ uf.union(s0, slotOf[c.id][ports[1]]); passthrough[c.id]=true; }
+        /* comp.on === false 인 스위치(논리 입력 0)는 실행 모드에서도 열려 있다 */
+        if(closed && c.on!==false){ uf.union(s0, slotOf[c.id][ports[1]]); passthrough[c.id]=true; }
       }
     });
 
@@ -114,12 +115,15 @@ App.Netlist=(function(){
     });
     var nodeCount=next;
 
+    /* compNodes: 포트 순서대로의 노드 목록. 2포트 = [nA,nB], 1포트 = [n,n],
+     *   3포트(BJT: B,C,E) = [nB,nC,nE]. 소비자 대부분은 [0],[1] 만 본다. */
     var compNodes={};
     comps.forEach(function(c){
       var ports=portsOf(c);
-      var nA=portNode[c.id][ports[0]];
-      var nB=portNode[c.id][ports[1]!=null?ports[1]:ports[0]];
-      compNodes[c.id]=[nA,nB];
+      var arr=[];
+      ports.forEach(function(p){ arr.push(portNode[c.id][p]); });
+      if(arr.length===1) arr.push(arr[0]);
+      compNodes[c.id]=arr;
     });
 
     /* 전원 단락 (양단 동일 노드) — 물리적으로 해 없음 */
@@ -133,9 +137,12 @@ App.Netlist=(function(){
     var adj=[]; for(var i=0;i<nodeCount;i++) adj.push([]);
     comps.forEach(function(c){
       if(NODE_TYPES[c.type]) return;
-      if(c.type===TYPE.SWITCH&&!closed) return;
-      var nn=compNodes[c.id]; if(nn[0]===nn[1]) return;
-      adj[nn[0]].push(nn[1]); adj[nn[1]].push(nn[0]);
+      if(c.type===TYPE.SWITCH&&!passthrough[c.id]) return;   /* 열린 스위치는 잇지 않는다 */
+      var nn=compNodes[c.id];
+      for(var a=0;a<nn.length;a++) for(var b2=a+1;b2<nn.length;b2++){
+        if(nn[a]===nn[b2]) continue;
+        adj[nn[a]].push(nn[b2]); adj[nn[b2]].push(nn[a]);
+      }
     });
     var islandOf=new Int32Array(nodeCount); for(var k=0;k<nodeCount;k++) islandOf[k]=-1;
     var islands=[];

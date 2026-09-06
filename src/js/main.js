@@ -46,17 +46,40 @@ App.Main=(function(){
 
   function _buildSidebar(){
     var sb=document.getElementById('sidebar');sb.innerHTML='';
-    SIDEBAR_ITEMS.forEach(function(item,idx){
-      var div=document.createElement('div');div.className='sidebar-item'+(item.rail?' rail':'');
-      div.id='sidebar-item-'+item.type;  /* J4 위치 계산용 id */
-      var cv=document.createElement('canvas');cv.width=32;cv.height=32;cv.style.pointerEvents='none';
-      App.Symbols.drawMini(cv,item.type);
-      var lbl=document.createElement('span');lbl.className='s-label';lbl.textContent=item.label;
-      div.appendChild(cv);div.appendChild(lbl);
-      div.addEventListener('pointerdown',function(e){e.stopPropagation();App.Interaction.startSidebarDrag(item,e.clientX,e.clientY,div);});
-      sb.appendChild(div);
-      if(idx===4){var sep=document.createElement('div');sep.className='sidebar-sep';sb.appendChild(sep);}
+    /* 같은 group 의 항목은 버튼 하나로 묶인다 (R: 저항/전구, SEMI: 다이오드/npn/pnp).
+     *   클릭 = 종류 선택 팝업, 드래그 = 마지막에 고른 종류 배치. */
+    var groups={};
+    SIDEBAR_ITEMS.forEach(function(item){
+      if(!item.group) return;
+      if(!groups[item.group]) groups[item.group]={key:item.group,label:item.groupLabel||item.label,options:[],current:0};
+      groups[item.group].options.push(item);
     });
+    var seen={};
+    SIDEBAR_ITEMS.forEach(function(item){
+      if(item.group){ if(seen[item.group]) return; seen[item.group]=true; }
+      var grp=item.group?groups[item.group]:null;
+      var div=document.createElement('div');div.className='sidebar-item'+(item.rail?' rail':'');
+      div.id='sidebar-item-'+(grp?grp.key:item.type);  /* J4 위치 계산용 id */
+      var cv=document.createElement('canvas');cv.width=32;cv.height=32;cv.style.pointerEvents='none';
+      var lbl=document.createElement('span');lbl.className='s-label';
+      function _refresh(){
+        var cur=grp?grp.options[grp.current]:item;
+        App.Symbols.drawMini(cv,cur.type);
+        lbl.textContent=grp?(grp.current===0?grp.label:cur.label):item.label;
+      }
+      _refresh();
+      div.appendChild(cv);div.appendChild(lbl);
+      if(grp){ grp.el=div; grp.refresh=_refresh; div.classList.add('group'); }
+      div.addEventListener('pointerdown',function(e){
+        e.stopPropagation();
+        var eff=grp?grp.options[grp.current]:item;
+        if(grp){ eff=Object.assign({},eff,{pickOnClick:grp}); }
+        App.Interaction.startSidebarDrag(eff,e.clientX,e.clientY,div);
+      });
+      sb.appendChild(div);
+      if(item.type===TYPE.INDUCTOR){var sep=document.createElement('div');sep.className='sidebar-sep';sb.appendChild(sep);}
+    });
+    _groups=groups;
     /* ── 전체 초기화 버튼 ── */
     var spacer=document.createElement('div');spacer.style.flex='1';sb.appendChild(spacer);
     var clearSep=document.createElement('div');clearSep.className='sidebar-sep';sb.appendChild(clearSep);
@@ -198,7 +221,35 @@ App.Main=(function(){
     _place(item,cg.gridX,cg.gridY);
   }
 
+  var _groups={};   /* 사이드바 그룹 (R·SEMI) — _buildSidebar 가 채움 */
+
+  /* 그룹 선택 팝업 — 고르면 그 종류를 화면 중앙에 배치하고 이후 드래그 기본값이 된다 */
+  function _openPicker(grp){
+    _closePicker();
+    var pop=document.createElement('div'); pop.id='sb-picker';
+    var rect=grp.el.getBoundingClientRect();
+    pop.style.left=(rect.right+8)+'px'; pop.style.top=rect.top+'px';
+    grp.options.forEach(function(opt,i){
+      var b=document.createElement('div'); b.className='sb-pick'+(i===grp.current?' current':'');
+      var cv=document.createElement('canvas'); cv.width=30; cv.height=30; cv.style.pointerEvents='none';
+      App.Symbols.drawMini(cv,opt.type);
+      var t=document.createElement('span'); t.textContent=opt.label;
+      b.appendChild(cv); b.appendChild(t);
+      b.addEventListener('pointerdown',function(e){ e.stopPropagation(); });
+      b.addEventListener('click',function(e){
+        e.stopPropagation();
+        grp.current=i; grp.refresh(); _closePicker();
+        addComponentCenter(opt);
+      });
+      pop.appendChild(b);
+    });
+    document.body.appendChild(pop);
+    setTimeout(function(){ document.addEventListener('pointerdown',_closePicker,{once:true}); },0);
+  }
+  function _closePicker(){ var p=document.getElementById('sb-picker'); if(p) p.remove(); }
+
   function addComponentCenter(item){
+    if(item.pickOnClick){ _openPicker(item.pickOnClick); return; }   /* 그룹 버튼 클릭 = 선택 */
     var c=document.getElementById('canvas-container');
     var g=App.Geo.pixelToGrid(c.clientWidth/2,c.clientHeight/2);
     var f=_findEmpty(g.gridX,g.gridY);if(!f){showErrorToast('배치 공간이 없습니다.');return;}
@@ -243,6 +294,7 @@ App.Main=(function(){
   function _place(item,gx,gy){
     var comp={id:App.State.genId(),type:item.type,gridX:gx,gridY:gy,rotation:0,value:item.defValue,value2:item.defValue2,label:''};
     if(item.type===TYPE.LABEL) comp.label=item.label||'VCC';   /* 레일 이름 */
+    if(item.type===TYPE.DC_SOURCE||item.type===TYPE.AC_SOURCE) comp.rint=0;   /* 내부저항 (Ω) */
     App.State.addComponent(comp);          // state:changed emit
     App.State.autoConnectAdjacent(comp.id); // 인접 포트 자동 연결 (중복 emit 무해)
     attachAutoSwitch(comp);

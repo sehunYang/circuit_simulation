@@ -55,6 +55,7 @@ App.Analysis.op=function(nl, devs, opts){
 
   function solveWith(gmin, rser){
     var x=new Float64Array(N), iter=0;
+    for(var r0=0;r0<devs.length;r0++) if(devs[r0].reset) devs[r0].reset();   /* 접합 전압 제한 이력 초기화 */
     if(!nonlinear){
       var sol=MNA.solve(assemble(x,gmin,rser));
       return sol?{x:sol,iterations:1}:null;
@@ -67,6 +68,8 @@ App.Analysis.op=function(nl, devs, opts){
         var dx=Math.abs(xn[i]-x[i]);
         if(dx>tolA+tolR*Math.abs(xn[i])){ conv=false; }
       }
+      /* 접합 전압 제한이 걸린 소자가 있으면 아직 수렴이 아니다 */
+      for(var di=0;di<devs.length;di++) if(devs[di].limited){ conv=false; break; }
       x=xn;
       if(conv) return{x:x,iterations:iter+1};
     }

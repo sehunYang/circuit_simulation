@@ -37,3 +37,18 @@
 /* 회로이론 표기(접지·레일 라벨) 항목 — 표기 모드에서만 보인다 */
 .sidebar-item.rail { display: none; }
 #sidebar.rail-mode .sidebar-item.rail { display: flex; }
+
+/* 그룹 버튼(저항/전구 · 반도체) 선택 팝업 */
+.sidebar-item.group::after { content: '▸'; position: absolute; right: 4px; bottom: 2px; font-size: 9px; color: var(--text-dim); }
+.sidebar-item { position: relative; }
+#sb-picker {
+  position: fixed; z-index: 60; display: flex; flex-direction: column; gap: 4px;
+  background: var(--bg-popup); border: 1px solid var(--border-base); border-radius: var(--radius-md);
+  padding: 6px; box-shadow: var(--shadow-panel); backdrop-filter: var(--blur);
+}
+#sb-picker .sb-pick {
+  display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 6px; border-radius: var(--radius-sm);
+  cursor: pointer; font-family: var(--font); font-size: 11px; color: var(--text-base); border: 1px solid transparent;
+}
+#sb-picker .sb-pick:hover { background: var(--btn-h); border-color: var(--border-active); }
+#sb-picker .sb-pick.current { background: var(--sel-bg); }

@@ -40,6 +40,7 @@ function makeApp(){
   ['circuit/netlist.js','circuit/mna.js',
    'circuit/devices/index.js','circuit/devices/resistor.js','circuit/devices/capacitor.js',
    'circuit/devices/inductor.js','circuit/devices/vsource.js',
+   'circuit/devices/bulb.js','circuit/devices/diode.js','circuit/devices/bjt.js',
    'circuit/analysis/op.js','circuit/analysis/ac.js',
    'circuit/post/wires.js','circuit/post/result.js',
    'circuit/solver.js','ui/transient-graph.js'].forEach(function(f){ load('src/js/'+f); });
@@ -842,6 +843,132 @@ async function main(){
     scenario('NL-3 열린 스위치 + 축전기: 부동 노드 해석 가능');
     check('유효', srO.valid, srO.error);
     approx('전류 0', Math.abs(srO.branchCurrents[R.id]), 0, 0, 1e-9);
+  })();
+
+  /* ── SC-1: 다이오드 순방향 — 12V, R=1kΩ. 해는 Shockley 와 옴 법칙을 동시에 만족 ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('DC_SOURCE',12), R=c.add('RESISTOR',1000), Dd=c.add('DIODE',0);
+    c.wire(V,'L',R,'L'); c.wire(R,'R',Dd,'L'); c.wire(Dd,'R',V,'R');
+    var sr=await solveCircuit(sb,c);
+    scenario('SC-1 다이오드 순방향: I=(12−V_D)/R, I=I_s(e^{V_D/V_T}−1) 동시 만족');
+    check('유효', sr.valid, sr.error);
+    var I=sr.branchCurrents[Dd.id], Vd=sr.dc.compV[Dd.id];
+    var IS=1e-12, VT=0.025852;
+    approx('옴 법칙 잔차', I, (12-Vd)/1000, 1e-6);
+    approx('Shockley 잔차', I, IS*(Math.exp(Vd/VT)-1), 1e-4);
+    check('V_D ≈ 0.6~0.7 V', Vd>0.55&&Vd<0.75, 'Vd='+Vd);
+    check('상태 순방향', sr.dc.out[Dd.id].region==='forward');
+  })();
+
+  /* ── SC-2: 다이오드 역방향 — 전류 ≈ 0, 전원 전압이 다이오드에 걸림 ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('DC_SOURCE',12), R=c.add('RESISTOR',1000), Dd=c.add('DIODE',0);
+    c.wire(V,'L',R,'L'); c.wire(R,'R',Dd,'R'); c.wire(Dd,'L',V,'R');   /* 캐소드가 + 쪽 */
+    var sr=await solveCircuit(sb,c);
+    scenario('SC-2 다이오드 역방향: I≈0, V_D≈−12V');
+    check('유효', sr.valid, sr.error);
+    approx('I≈0 (< 1nA)', Math.abs(sr.branchCurrents[Dd.id]), 0, 0, 1e-9);
+    approx('V_D ≈ −12', sr.dc.compV[Dd.id], -12, 1e-3);
+    check('상태 역방향', sr.dc.out[Dd.id].region==='reverse');
+  })();
+
+  /* ── SC-3: npn 세 영역 — 공통 이미터, V_CC=12, R_C=1kΩ, β=100 ──
+   *   차단: 베이스 개방 → I_C≈0, V_CE≈12
+   *   활성: R_B=1MΩ → I_B≈(12−0.65)/1M≈11µA, I_C≈βI_B≈1.1mA, V_CE≈10.9
+   *   포화: R_B=10kΩ → βI_B(≈0.11A) 가 12/1k 를 훨씬 넘음 → V_CE ≈ 0.1V */
+  await (async function(){
+    function ckt(RB){
+      var sb=makeApp(), c=circuit(sb);
+      var V=c.add('DC_SOURCE',12), RC=c.add('RESISTOR',1000), Q=c.add('NPN',100);
+      var JA=c.add('JUNCTION_3'), JB=c.add('JUNCTION_3');
+      c.wire(V,'L',JA,'L'); c.wire(JA,'R',RC,'L'); c.wire(RC,'R',Q,'T');
+      c.wire(Q,'B',JB,'L'); c.wire(JB,'R',V,'R');
+      if(RB){ var Rb=c.add('RESISTOR',RB); c.wire(JA,'B',Rb,'L'); c.wire(Rb,'R',Q,'L'); }
+      return {sb:sb,c:c,Q:Q,RC:RC};
+    }
+    scenario('SC-3 npn 동작 영역: 차단 · 활성(I_C=βI_B) · 포화(V_CE≈0.1V)');
+    var a=ckt(null); var sra=await solveCircuit(a.sb,a.c);
+    check('차단: 유효', sra.valid, sra.error);
+    var oa=sra.dc.out[a.Q.id];
+    check('차단 영역', oa.region==='cutoff', oa.region);
+    approx('차단: I_C≈0', Math.abs(oa.iC), 0, 0, 1e-9);
+    approx('차단: V_CE≈12', oa.vCE, 12, 1e-3);
+    var b=ckt(1e6); var srb=await solveCircuit(b.sb,b.c);
+    var ob=srb.dc.out[b.Q.id];
+    check('활성 영역', ob.region==='active', ob.region+' vCE='+ob.vCE);
+    approx('활성: I_C/I_B ≈ β=100', ob.iC/ob.iB, 100, 0.02);
+    approx('활성: V_CE = 12 − I_C·R_C', ob.vCE, 12-ob.iC*1000, 1e-6);
+    var s3=ckt(1e4); var src=await solveCircuit(s3.sb,s3.c);
+    var oc=src.dc.out[s3.Q.id];
+    check('포화 영역', oc.region==='saturation', oc.region+' vCE='+oc.vCE);
+    check('포화: V_CE < 0.3V', oc.vCE<0.3, 'vCE='+oc.vCE);
+    check('포화: I_C/I_B < β', oc.iC/oc.iB<50, 'ratio='+(oc.iC/oc.iB));
+    approx('KCL: I_B+I_C+I_E=0', oc.iB+oc.iC+oc.iE, 0, 0, 1e-12);
+  })();
+
+  /* ── SC-4: RTL 논리 게이트 진리표 (스위치 = 입력, 컬렉터 전압 = 출력) ──
+   *   V_CC=5V, R_C=1kΩ, R_B=10kΩ. 출력 H > 4V, L < 0.4V.
+   *   NOT: 1개.  NOR: 두 트랜지스터 병렬.  NAND: 직렬.  AND = NAND → NOT. */
+  await (async function(){
+    var H=4.0, Lv=0.4;
+    function rtl(kind, inA, inB){
+      var sb=makeApp(), c=circuit(sb);
+      var V=c.add('DC_SOURCE',5), G=c.add('GROUND',0), L0=c.add('LABEL',0); L0.label='VCC';
+      c.wire(L0,'B',V,'L'); c.wire(V,'R',G,'T');
+      function input(on){ var L=c.add('LABEL',0); L.label='VCC'; var S=c.add('SWITCH',0); S.on=!!on; var Rb=c.add('RESISTOR',1e4);
+        c.wire(L,'B',S,'L'); c.wire(S,'R',Rb,'L'); return Rb; }
+      function pullup(){ var L=c.add('LABEL',0); L.label='VCC'; var Rc=c.add('RESISTOR',1000); c.wire(L,'B',Rc,'L'); return Rc; }
+      function gnd(){ return c.add('GROUND',0); }
+      var out;
+      if(kind==='NOT'){
+        var Rc=pullup(), Q=c.add('NPN',100), Rb=input(inA), g=gnd();
+        c.wire(Rc,'R',Q,'T'); c.wire(Rb,'R',Q,'L'); c.wire(Q,'B',g,'T'); out=Rc;
+      } else if(kind==='NOR'){
+        var Rc2=pullup(), J=c.add('JUNCTION_3'), Q1=c.add('NPN',100), Q2=c.add('NPN',100);
+        c.wire(Rc2,'R',J,'L'); c.wire(J,'R',Q1,'T'); c.wire(J,'B',Q2,'T');
+        c.wire(input(inA),'R',Q1,'L'); c.wire(input(inB),'R',Q2,'L');
+        c.wire(Q1,'B',gnd(),'T'); c.wire(Q2,'B',gnd(),'T'); out=Rc2;
+      } else if(kind==='NAND'||kind==='AND'){
+        var Rc3=pullup(), Q1n=c.add('NPN',100), Q2n=c.add('NPN',100);
+        c.wire(Rc3,'R',Q1n,'T'); c.wire(Q1n,'B',Q2n,'T'); c.wire(Q2n,'B',gnd(),'T');
+        c.wire(input(inA),'R',Q1n,'L'); c.wire(input(inB),'R',Q2n,'L'); out=Rc3;
+        if(kind==='AND'){ /* NAND 출력 → 인버터 */
+          var Rc4=pullup(), Q3=c.add('NPN',100), Rb3=c.add('RESISTOR',1e4);
+          c.wire(Rc4,'R',Q3,'T'); c.wire(Q3,'B',gnd(),'T');
+          c.wire(Rb3,'L',Q1n,'T'); c.wire(Rb3,'R',Q3,'L'); out=Rc4;
+        }
+      }
+      return solveCircuit(sb,c).then(function(sr){
+        if(!sr.valid) return {v:NaN, valid:false, err:sr.error};
+        var node=sr.componentNodes[out.id][1];   /* 풀업 저항의 아래쪽 노드 = 출력 */
+        return {v:sr.nodeVoltages[node], valid:sr.valid, err:sr.error};
+      });
+    }
+    scenario('SC-4 RTL 논리 게이트 진리표 (NOT · NOR · NAND · AND)');
+    var t=[[0,0],[0,1],[1,0],[1,1]];
+    var r=await rtl('NOT',0); check('NOT(0)=1', r.valid&&r.v>H, 'v='+r.v+' '+(r.err||''));
+    r=await rtl('NOT',1); check('NOT(1)=0', r.valid&&r.v<Lv, 'v='+r.v+' '+(r.err||''));
+    for(var i=0;i<4;i++){
+      var A=t[i][0],B=t[i][1];
+      var rn=await rtl('NOR',A,B);  check('NOR('+A+','+B+')='+((A||B)?0:1), rn.valid&&((A||B)?rn.v<Lv:rn.v>H), 'v='+rn.v+' '+(rn.err||''));
+      var rd=await rtl('NAND',A,B); check('NAND('+A+','+B+')='+((A&&B)?0:1), rd.valid&&((A&&B)?rd.v<Lv:rd.v>H), 'v='+rd.v+' '+(rd.err||''));
+      var ra=await rtl('AND',A,B);  check('AND('+A+','+B+')='+((A&&B)?1:0), ra.valid&&((A&&B)?ra.v>H:ra.v<Lv), 'v='+ra.v+' '+(ra.err||''));
+    }
+  })();
+
+  /* ── SC-5: 전구 밝기 = P/정격, 내부저항 있는 전지의 단자전압 강하 ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('DC_SOURCE',12), B1=c.add('BULB',100,1); V.rint=20;
+    c.wire(V,'L',B1,'L'); c.wire(B1,'R',V,'R');
+    var sr=await solveCircuit(sb,c);
+    scenario('SC-5 전구 밝기 P/정격 · 전지 내부저항 (E−Ir)');
+    var I=12/120, P=I*I*100;
+    approx('I=E/(R+r)=0.1', Math.abs(sr.branchCurrents[B1.id]), I, 1e-6);
+    approx('단자전압 = E − I·r = 10V', Math.abs(sr.dc.compV[B1.id]), 10, 1e-6);
+    approx('밝기 = P/1W', sr.dc.out[B1.id].brightness, P/1, 1e-6);
   })();
 
   /* ════════════ 결과 출력 ════════════ */

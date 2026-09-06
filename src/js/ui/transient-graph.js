@@ -48,6 +48,9 @@ App.TransientGraph=(function(){
     var comps=App.State.components;
     var sr=App.State.solverResult;
     if(!sr||!sr.valid||sr.acPhasor) return null; /* DC만 */
+    /* 비선형 소자(다이오드·BJT)가 있으면 이 선형 과도 모델은 맞지 않는다 —
+     *   시간 영역 엔진(C 단계)으로 대체될 때까지 그래프를 띄우지 않는다 */
+    if(comps.some(function(c){return NONLINEAR_TYPES[c.type];})) return null;
 
     var caps=comps.filter(function(c){return c.type===TYPE.CAPACITOR;});
     var inds=comps.filter(function(c){return c.type===TYPE.INDUCTOR;});

@@ -12,7 +12,14 @@ var TYPE = Object.freeze({
   SWITCH:     'SWITCH',     /* 편집 모드 = 열림, 실행·비유 모드 = 닫힘 */
   GROUND:     'GROUND',     /* 회로이론 표기: 기준 노드(0 V), 1포트 */
   LABEL:      'LABEL',      /* 회로이론 표기: 전원 레일 라벨 — 같은 이름 = 같은 노드, 1포트 */
+  BULB:       'BULB',       /* 전구 = 저항 + 밝기 ∝ I²R (정격전력 value2 기준) */
+  DIODE:      'DIODE',      /* p-n 접합 다이오드 (Shockley), L=애노드 → R=캐소드 */
+  NPN:        'NPN',        /* BJT npn (Ebers-Moll): L=베이스, T=컬렉터, B=이미터 */
+  PNP:        'PNP',        /* BJT pnp */
 });
+
+/* 비선형 소자 — 동작점은 Newton-Raphson, 과도 그래프의 선형 모델은 적용 불가 */
+var NONLINEAR_TYPES = Object.freeze({ DIODE:true, NPN:true, PNP:true });
 
 /* 스탬프·전류·라벨이 없는 '연결점' 소자 (분기점·접지·레일 라벨).
  *   배지·특성값 라벨·측정값 표시에서 건너뛴다. */
@@ -53,12 +60,18 @@ var UNDO_MAX          = 30;    // Undo 최대 단계
  *   defValue : 기본 1차값 (저항Ω/전압V/전기용량F/인덕턴스H)
  *   defValue2: 기본 2차값 (AC 주파수Hz, 그 외 null)
  *   shortUnit: 사이드바·라벨 표시 단위 */
+/* group: 같은 group 의 항목은 사이드바 버튼 하나로 묶인다 — 클릭하면 고르고,
+ *        드래그하면 마지막에 고른 종류를 배치한다 (R: 저항/전구, SEMI: 다이오드/npn/pnp) */
 var SIDEBAR_ITEMS = [
   { type:TYPE.DC_SOURCE,  label:'DC',  defValue:12,      defValue2:null, shortUnit:'V'  },
   { type:TYPE.AC_SOURCE,  label:'AC',  defValue:220,     defValue2:60,   shortUnit:'V~' },
-  { type:TYPE.RESISTOR,   label:'R',   defValue:100,     defValue2:null, shortUnit:'Ω'  },
+  { type:TYPE.RESISTOR,   label:'R',   defValue:100,     defValue2:null, shortUnit:'Ω',  group:'R',    groupLabel:'R' },
+  { type:TYPE.BULB,       label:'전구', defValue:100,     defValue2:1,    shortUnit:'Ω',  group:'R' },   /* value2 = 정격 전력(W) */
   { type:TYPE.CAPACITOR,  label:'C',   defValue:100e-6,  defValue2:null, shortUnit:'µF' },
   { type:TYPE.INDUCTOR,   label:'L',   defValue:10e-3,   defValue2:null, shortUnit:'mH' },
+  { type:TYPE.DIODE,      label:'다이오드', defValue:0,   defValue2:null, shortUnit:'',   group:'SEMI', groupLabel:'반도체' },
+  { type:TYPE.NPN,        label:'npn', defValue:100,     defValue2:null, shortUnit:'',   group:'SEMI' },   /* value = β */
+  { type:TYPE.PNP,        label:'pnp', defValue:100,     defValue2:null, shortUnit:'',   group:'SEMI' },
   { type:TYPE.JUNCTION_3, label:'J3',  defValue:0,       defValue2:null, shortUnit:''   },
   { type:TYPE.JUNCTION_4, label:'J4',  defValue:0,       defValue2:null, shortUnit:''   },
   { type:TYPE.SWITCH,     label:'SW',  defValue:0,       defValue2:null, shortUnit:''   },
@@ -73,6 +86,8 @@ var SIDEBAR_ITEMS = [
 var COMP_PORTS = {
   DC_SOURCE:'LR', AC_SOURCE:'LR', RESISTOR:'LR',
   CAPACITOR:'LR', INDUCTOR:'LR', SWITCH:'LR',
+  BULB:'LR', DIODE:'LR',
+  NPN:'LTB', PNP:'LTB',          /* L=베이스, T=컬렉터, B=이미터 */
   JUNCTION_3:'LRB', JUNCTION_4:'LRTB',
   GROUND:'T', LABEL:'B',
 };

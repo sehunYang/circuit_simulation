@@ -29,16 +29,38 @@ App.Devices=(function(){
   function idx(n){ return n-1; }
   function V(x,i){ return i>=0?x[i]:0; }
 
-  /* 공통 골격 */
+  /* 공통 골격.
+   *   portCurrents(x) → { portId: 소자로 '들어가는' 전류 }  — 도선 전류 후처리가 쓴다.
+   *   2포트 기본값: ports[0] 로 +i 유입, ports[1] 로 −i (= i 유출).
+   *   3포트(BJT)는 자기 것을 정의한다. */
   function base(comp, nn){
+    var ports=(COMP_PORTS[comp.type]||'LR').split('');
     return{
-      id:comp.id, type:comp.type, comp:comp, nodes:nn,
-      i0:idx(nn[0]), i1:idx(nn[1]),
+      id:comp.id, type:comp.type, comp:comp, nodes:nn, ports:ports,
+      i0:idx(nn[0]), i1:idx(nn[1]), i2:(nn.length>2?idx(nn[2]):-1),
       extra:0, k:-1, linear:true, dynamic:false, disabled:false,
+      reset:function(){},
       loadOP:function(){}, loadAC:function(){},
       outputs:function(x){ return{v:V(x,this.i0)-V(x,this.i1), i:0}; },
       outputsAC:function(xr,xi){ return{v:{re:V(xr,this.i0)-V(xr,this.i1), im:V(xi,this.i0)-V(xi,this.i1)}, i:{re:0,im:0}}; },
+      portCurrents:function(x){
+        var o=this.outputs(x), r={}; r[this.ports[0]]=o.i; r[this.ports[1]]=-o.i; return r;
+      },
+      portCurrentsAC:function(xr,xi,omega){
+        var o=this.outputsAC(xr,xi,omega), r={};
+        r[this.ports[0]]=o.i; r[this.ports[1]]={re:-o.i.re,im:-o.i.im}; return r;
+      },
     };
+  }
+
+  /* pn 접합 전압 제한 (SPICE pnjlim) — NR 이 지수 폭발로 발산하지 않게 */
+  var VT=0.025852;
+  function pnjlim(vnew, vold, vt, vcrit){
+    if(vnew>vcrit && Math.abs(vnew-vold)>2*vt){
+      if(vold>0){ var arg=1+(vnew-vold)/vt; vnew = arg>0 ? vold+vt*Math.log(arg) : vcrit; }
+      else vnew=vt*Math.log(vnew/vt);
+    }
+    return vnew;
   }
 
   function create(comp, nl){
@@ -52,7 +74,8 @@ App.Devices=(function(){
     return devs;
   }
 
-  return{register:register, create:create, createAll:createAll, base:base, idx:idx, V:V, SMALL_R:SMALL_R};
+  return{register:register, create:create, createAll:createAll, base:base, idx:idx, V:V,
+         SMALL_R:SMALL_R, VT:VT, pnjlim:pnjlim};
 })();
 
 }());

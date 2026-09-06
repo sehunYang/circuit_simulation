@@ -132,6 +132,19 @@ App.EditRenderer=(function(){
       var isDragged=(comp.id===draggedId);
       _ctx.save();
       if(isDragged) _ctx.globalAlpha=0.28;
+      /* 전구 광량 — 밝기 ∝ 전력(I²R)/정격. 화면 전용(촬영에는 없음). */
+      var srB=App.State.solverResult;
+      if(comp.type===TYPE.BULB&&!isDragged&&srB&&srB.valid&&srB.dc&&srB.dc.out&&srB.dc.out[comp.id]){
+        var br=Math.max(0,Math.min(1.5,srB.dc.out[comp.id].brightness||0));
+        if(br>0.02){
+          var gr=_ctx.createRadialGradient(cx,cy,cellPx*0.05,cx,cy,cellPx*0.62);
+          var a=0.18+0.55*Math.min(1,br);
+          gr.addColorStop(0,'rgba(255,214,90,'+a.toFixed(3)+')');
+          gr.addColorStop(0.55,'rgba(255,190,60,'+(a*0.45).toFixed(3)+')');
+          gr.addColorStop(1,'rgba(255,170,40,0)');
+          _ctx.fillStyle=gr; _ctx.beginPath(); _ctx.arc(cx,cy,cellPx*0.62,0,Math.PI*2); _ctx.fill();
+        }
+      }
       App.Symbols.draw(_ctx,comp.type,cx,cy,cellPx,comp.rotation);
       if(!isDragged) App.Symbols.drawLabel(_ctx,comp,cx,cy,cellPx);
       _ctx.restore();
