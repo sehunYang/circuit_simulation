@@ -392,6 +392,20 @@ App.Interaction=(function(){
 
     cancelInertia();
 
+    /* ── 실행 모드: 스위치를 누르면 켜고 끈다 (논리 입력·개폐 실험) ──
+     *   comp.on === false 인 스위치는 실행 모드에서도 열려 있다. */
+    if(App.State.mode==='run'){
+      var swHit=_hitComp(x,y);
+      if(swHit&&swHit.type===TYPE.SWITCH){
+        swHit.on=(swHit.on===false);
+        App.State.selectedId=swHit.id;
+        App.Events.emit('state:changed');
+        App.Solver.solveNow();
+        showErrorToast(swHit.on?'스위치 닫힘 (1)':'스위치 열림 (0)',900);
+        return;
+      }
+    }
+
     // ── 더블탭 감지: 시간 + 위치 기반 (pointerId는 모바일에서 매번 바뀔 수 있음) ──
     var now=Date.now();
     var dx=x-(_lastTapX||0), dy=y-(_lastTapY||0);

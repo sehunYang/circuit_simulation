@@ -28,6 +28,7 @@ App.EditRenderer=(function(){
   var _wirePreview=null;       // {x1,y1,x2,y2,dir} — 도선 미리보기
   var _nearestPort=null;       // {componentId,port} — 연결 중 가장 가까운 포트
   var _flashWires={};          // {wireId: endTime} — 도선 완성 플래시
+  var _cmpTimer=null;   /* 전후 비교 배지 지우기 타이머 */
   var _selAnimId=null;
 
   function init(){_cv=document.getElementById('canvas-main');_ctx=_cv.getContext('2d');SN=App.SN;}
@@ -59,6 +60,30 @@ App.EditRenderer=(function(){
     return true;
   }
   /* 도선 전류 크기: wireCurrents 우선, 없으면 양단 부품 branchCurrent 폴백 */
+  /* ── 전위 지형 보기 ──
+   *   도선의 전위 = 그 도선이 붙은 포트의 노드 전위 (solverResult.portVoltages).
+   *   색은 회로 전체의 최저(파랑) ~ 최고(빨강) 전위에 대한 상대 위치. */
+  function _potOfWire(wire){
+    var sr=App.State.solverResult; if(!sr||!sr.valid||!sr.portVoltages) return null;
+    var pv=sr.portVoltages[wire.fromId];
+    if(pv&&pv[wire.fromPort]!=null) return pv[wire.fromPort];
+    pv=sr.portVoltages[wire.toId];
+    return (pv&&pv[wire.toPort]!=null)?pv[wire.toPort]:null;
+  }
+  function _potRange(sr){
+    if(sr._potRange) return sr._potRange;
+    var lo=Infinity, hi=-Infinity;
+    Object.keys(sr.portVoltages||{}).forEach(function(id){ var pv=sr.portVoltages[id];
+      Object.keys(pv).forEach(function(p){ var v=pv[p]; if(v<lo)lo=v; if(v>hi)hi=v; }); });
+    if(!isFinite(lo)){ lo=0; hi=1; } if(hi-lo<1e-9) hi=lo+1;
+    sr._potRange={lo:lo,hi:hi}; return sr._potRange;
+  }
+  function _potColor(wire){
+    var sr=App.State.solverResult; var v=_potOfWire(wire); if(v==null||!sr) return null;
+    var r=_potRange(sr), t=Math.max(0,Math.min(1,(v-r.lo)/(r.hi-r.lo)));
+    return 'hsl('+Math.round(220-220*t)+',72%,42%)';
+  }
+
   function _wireCurrentMag(wire,sr,wc){
     var I=wc[wire.id];
     if(I==null){
@@ -110,12 +135,35 @@ App.EditRenderer=(function(){
       } else if(isSelected){
         _ctx.strokeStyle=UI.accent;
         _ctx.lineWidth=SN.TOKENS.lwWire+1.1;
+      } else if(App.State.showPotential&&_potColor(wire)){
+        /* 전위 지형: 도선 색 = 그 노드의 전위 (낮음 파랑 → 높음 빨강). 화면 전용 */
+        _ctx.strokeStyle=_potColor(wire);
+        _ctx.lineWidth=SN.TOKENS.lwWire+1.6;
       } else {
         /* 기본 도선 = 가는 검정 실선 (수능 지면 규격) */
         _ctx.strokeStyle=SN.TOKENS.ink;
         _ctx.lineWidth=SN.TOKENS.lwWire;
       }
       _ctx.stroke();
+      /* 전위 지형: 도선 가운데에 전위 값 */
+      if(App.State.showPotential&&!isSelected){
+        var pv=_potOfWire(wire);
+        if(pv!=null){
+          var mid=path[1], seg0=Math.hypot(path[1].x-path[0].x,path[1].y-path[0].y), seg1=Math.hypot(path[2].x-path[1].x,path[2].y-path[1].y);
+          if(seg0>=seg1) mid={x:(path[0].x+path[1].x)/2,y:(path[0].y+path[1].y)/2}; else mid={x:(path[1].x+path[2].x)/2,y:(path[1].y+path[2].y)/2};
+          var horiz=(seg0>=seg1)?Math.abs(path[1].x-path[0].x)>Math.abs(path[1].y-path[0].y):Math.abs(path[2].x-path[1].x)>Math.abs(path[2].y-path[1].y);
+          _ctx.save();
+          _ctx.font='italic '+Math.max(9,Math.min(12,cellPx*0.2))+'px '+SN.TOKENS.font;
+          _ctx.textAlign='center'; _ctx.textBaseline=horiz?'bottom':'middle';
+          _ctx.fillStyle=_potColor(wire)||SN.TOKENS.ink;
+          var txt=(Math.abs(pv)<1e-3?'0 V':(Math.abs(pv)<1?(pv*1e3).toFixed(0)+' mV':pv.toFixed(2)+' V'));
+          var tw=_ctx.measureText(txt).width;
+          var tx=horiz?mid.x:mid.x+8+tw/2, ty=horiz?mid.y-5:mid.y;
+          _ctx.fillStyle='rgba(255,255,255,0.85)'; _ctx.fillRect(tx-tw/2-2,ty-(horiz?11:6),tw+4,12);
+          _ctx.fillStyle=_potColor(wire)||SN.TOKENS.ink; _ctx.fillText(txt,tx,ty);
+          _ctx.restore();
+        }
+      }
       _ctx.restore();
 
       // 선택된 도선: 끝점 핸들 + 꺾임점 핸들
@@ -136,16 +184,17 @@ App.EditRenderer=(function(){
       var srB=App.State.solverResult;
       if(comp.type===TYPE.BULB&&!isDragged&&srB&&srB.valid&&srB.dc&&srB.dc.out&&srB.dc.out[comp.id]){
         var br=Math.max(0,Math.min(1.5,srB.dc.out[comp.id].brightness||0));
-        if(br>0.02){
+        /* 정격의 10% 아래는 '꺼짐' (논리 회로의 L 레벨 등 미소 전력은 빛나지 않는다) */
+        if(br>0.10){
           var gr=_ctx.createRadialGradient(cx,cy,cellPx*0.05,cx,cy,cellPx*0.62);
-          var a=0.18+0.55*Math.min(1,br);
+          var a=0.12+0.6*Math.min(1,(br-0.10)/0.9);
           gr.addColorStop(0,'rgba(255,214,90,'+a.toFixed(3)+')');
           gr.addColorStop(0.55,'rgba(255,190,60,'+(a*0.45).toFixed(3)+')');
           gr.addColorStop(1,'rgba(255,170,40,0)');
           _ctx.fillStyle=gr; _ctx.beginPath(); _ctx.arc(cx,cy,cellPx*0.62,0,Math.PI*2); _ctx.fill();
         }
       }
-      App.Symbols.draw(_ctx,comp.type,cx,cy,cellPx,comp.rotation);
+      App.Symbols.draw(_ctx,comp.type,cx,cy,cellPx,comp.rotation,{comp:comp});
       if(!isDragged) App.Symbols.drawLabel(_ctx,comp,cx,cy,cellPx);
       _ctx.restore();
 
@@ -372,7 +421,18 @@ App.EditRenderer=(function(){
         else { bx2=mx+boff; side='right'; }
         var fsz2=Math.max(SN.FS.badgeMin,Math.min(11,cellPx*0.20));
         var Idisp=Ipeak*rmsK;
-        drawBadge(_fmtCurrentShort(Math.abs(Idisp))+(isAC?' rms':''),bx2,by2,fsz2,side);
+        var txtB=_fmtCurrentShort(Math.abs(Idisp))+(isAC?' rms':'');
+        /* 전후 비교: 값을 바꾼 직후 몇 초간 '이전 → 지금' 을 함께 보인다
+         *   (국소 추론 오개념 — 바꾼 곳 뒤쪽만 변한다는 생각 — 을 반박) */
+        var prevSr=App.State.prevSolverResult;
+        if(prevSr&&prevSr.valid&&App.State.prevSolverAt&&(Date.now()-App.State.prevSolverAt)<3500&&prevSr.wireCurrents){
+          var pI=prevSr.wireCurrents[wire.id];
+          if(pI!=null&&Math.abs(pI-Ipeak)>Math.max(1e-9,0.01*Math.max(Math.abs(pI),Math.abs(Ipeak)))){
+            txtB=_fmtCurrentShort(Math.abs(pI*rmsK))+' → '+txtB;
+            if(!_cmpTimer) _cmpTimer=setTimeout(function(){ _cmpTimer=null; scheduleRender(); },3600);   /* 3.5초 뒤 지움 */
+          }
+        }
+        drawBadge(txtB,bx2,by2,fsz2,side);
       }
     });
 

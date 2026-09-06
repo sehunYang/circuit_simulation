@@ -164,6 +164,38 @@ App.RunRenderer=(function(){
     });
   }
 
+  /* ── 전하 카운터 ──
+   *   Q = ∫|i| dt 를 도선마다 누적해 도선 가운데에 적는다. 파형 재생 중에는
+   *   물리 시간(tPhys)의 증분으로, 정적 회로에서는 벽시계 dt 로 적분한다.
+   *   전구 앞뒤 도선의 숫자가 같이 올라가는 것 — 전류 소모 모델의 반례. */
+  var _charge={}, _lastTPhys=null;
+  function _accumulateCharge(sr, tPhys, dt){
+    var dtPhys=dt;
+    if(tPhys!=null){ dtPhys=(_lastTPhys==null)?0:Math.max(0,tPhys-_lastTPhys); _lastTPhys=tPhys; }
+    App.State.wires.forEach(function(wire){
+      var I = sr.wave ? Math.abs(sr.wave.sampleWire(wire.id, tPhys)) :
+              (sr.acPhasor ? 0 : Math.abs(sr.wireCurrents[wire.id]||0));
+      _charge[wire.id]=(_charge[wire.id]||0)+I*dtPhys;
+    });
+    /* 표시 */
+    App.State.wires.forEach(function(wire){
+      var info=_wirePathInfo(wire); if(!info) return;
+      var q=_charge[wire.id]||0; if(q<=0) return;
+      var path=info.path, s0=Math.hypot(path[1].x-path[0].x,path[1].y-path[0].y), s1=Math.hypot(path[2].x-path[1].x,path[2].y-path[1].y);
+      var a=s0>=s1?path[0]:path[1], b=s0>=s1?path[1]:path[2];
+      var mx=(a.x+b.x)/2, my=(a.y+b.y)/2, horiz=Math.abs(b.x-a.x)>Math.abs(b.y-a.y);
+      var txt=(q<1e-6?(q*1e9).toFixed(0)+' nC':q<1e-3?(q*1e6).toFixed(1)+' µC':q<1?(q*1e3).toFixed(2)+' mC':q.toFixed(3)+' C');
+      _ctx.save();
+      _ctx.font='11px '+App.SN.TOKENS.fontKo; _ctx.textAlign='center'; _ctx.textBaseline='middle';
+      var tw=_ctx.measureText(txt).width+8, x=horiz?mx:mx-tw/2-10, y=horiz?my+16:my;
+      _ctx.fillStyle='rgba(255,255,255,0.92)'; _ctx.strokeStyle='#6b7482'; _ctx.lineWidth=1;
+      _ctx.beginPath(); if(_ctx.roundRect) _ctx.roundRect(x-tw/2,y-8,tw,16,4); else _ctx.rect(x-tw/2,y-8,tw,16); _ctx.fill(); _ctx.stroke();
+      _ctx.fillStyle='#1d4ed8'; _ctx.fillText('Q '+txt,x,y);
+      _ctx.restore();
+    });
+  }
+  function resetCharge(){ _charge={}; _lastTPhys=null; }
+
   /* ── 파티클 풀 초기화 ── */
   function _initPools(){
     var sr = App.State.solverResult;
@@ -396,6 +428,8 @@ App.RunRenderer=(function(){
       else if(sr.acPhasor) _updatePoolsAC(_t, sr);
       _updateParticles(dt);
       _drawParticles();
+      /* 전하 카운터: 도선을 지나간 전하량 누적 — 전구 앞뒤가 같음을 숫자로 */
+      if(App.State.showCharge) _accumulateCharge(sr, tPhys, dt);
     } else {
       _drawIncompleteOverlay();
     }
@@ -410,6 +444,7 @@ App.RunRenderer=(function(){
     _ctx = _cv.getContext('2d');
     _lastTs = 0;
     _t = 0;  /* 물리 시간 초기화 */
+    resetCharge();
     _initPools();
     App.Events.on('solver:done', _initPools);
     _rafId = requestAnimationFrame(_runLoop);

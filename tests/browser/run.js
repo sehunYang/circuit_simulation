@@ -381,6 +381,77 @@ async function inkCount(p,sel,pred){ return p.evaluate((sel,predSrc)=>{const cv=
   await L.sleep(300);
   await L.mode(p,'edit');
 
+  /* ══ E 단계: POE · 진리표 · 공유 링크 · 전위 지형 · 전하 카운터 · 스위치 토글 ══ */
+  /* 1. POE 예제 전부: 회로 로드 → 유효 해석 / 진리표 예제는 관찰값 = 기대값 */
+  const poeE=await p.evaluate(()=>{
+    const P=window.App.POE, out=[];
+    P.EXAMPLES.forEach(ex=>{
+      P.loadCircuit(ex);
+      const sr=window.App.Solver.solve(window.App.State.components, window.App.State.wires, {closed:true, noWave:true});
+      const row={id:ex.id, valid:sr.valid, err:sr.error, warn:(sr.warnings||[]).length};
+      if(ex.truth){ const rows=P.truthObserve(ex); row.truth=rows.map(r=>r.inp.join('')+':'+r.out+'/'+r.expect); row.truthOK=rows.every(r=>r.out===r.expect); }
+      out.push(row);
+    });
+    return out;
+  });
+  poeE.forEach(r=>{ chk('POE '+r.id+': 회로 유효'+(r.warn?' (경고 '+r.warn+')':''), r.valid, r.err||''); if(r.truth) chk('POE '+r.id+': 진리표 관찰 = 기대 '+r.truth.join(' '), r.truthOK); });
+
+  /* 2. POE 흐름: 밝기 예제 시작 → 예측 → 관찰(실행 모드) → 설명 → 결과 기록 */
+  const flowE=await p.evaluate(async()=>{
+    const P=window.App.POE; P.open(); P.start(P.EXAMPLES[0]);
+    const body=document.getElementById('poe-body');
+    const opts=body.querySelectorAll('.poe-opt'); opts[1].click();   /* 오답 선택 (A=B=C) */
+    await new Promise(r=>setTimeout(r,50));
+    body.querySelector('.poe-primary').click();   /* 관찰하기 */
+    await new Promise(r=>setTimeout(r,300));
+    const mode=window.App.State.mode, badges=window.App.State.showBadges;
+    body.querySelector('.poe-primary').click();   /* 설명 보기 */
+    await new Promise(r=>setTimeout(r,50));
+    const verdict=body.querySelector('.poe-verdict')&&body.querySelector('.poe-verdict').textContent;
+    const tag=body.querySelector('.poe-tag')&&body.querySelector('.poe-tag').textContent;
+    const res=P.results();
+    return {mode, badges, verdict, tag, n:res.length, correct:res[0]&&res[0].correct};
+  });
+  chk('POE 흐름: 관찰 = 실행 모드 + 배지 ON', flowE.mode==='run'&&flowE.badges, JSON.stringify(flowE));
+  chk('POE 흐름: 오답 → 판정·오개념 태그·기록', /다릅니다/.test(flowE.verdict||'')&&/전류/.test(flowE.tag||'')&&flowE.n===1&&flowE.correct===false, JSON.stringify(flowE));
+  await L.mode(p,'edit');
+
+  /* 3. 공유 링크 왕복 */
+  const shareE=await p.evaluate(()=>{
+    const S=window.App.State, Sh=window.App.Share;
+    const before={n:S.components.length, w:S.wires.length, types:S.components.map(c=>c.type).sort().join(',')};
+    const enc=Sh.encode(); const dec=Sh.decode(enc);
+    Sh.load(dec);
+    const afterE={n:S.components.length, w:S.wires.length, types:S.components.map(c=>c.type).sort().join(',')};
+    const sr=window.App.Solver.solve(S.components,S.wires,{closed:true,noWave:true});
+    return {before, afterE, len:enc.length, valid:sr.valid, url:Sh.toURL().slice(0,40)};
+  });
+  chk('공유 링크: 인코딩→디코딩 후 소자·도선 수·종류 동일, 해석 유효', shareE.before.n===shareE.afterE.n&&shareE.before.w===shareE.afterE.w&&shareE.before.types===shareE.afterE.types&&shareE.valid, JSON.stringify(shareE));
+
+  /* 4. 전위 지형: 직렬 2저항 → 도선 색 (파랑·빨강 계열 픽셀) + 전위 텍스트 */
+  await L.build(p,C.div.comps,C.div.wires); await L.focus(p,51,50,1.6);
+  await p.evaluate(()=>{ if(!window.App.State.showPotential) document.getElementById('vis-potential').click(); });
+  await L.sleep(300);
+  const potPxE=await inkCount(p,'#canvas-main','a>0&&((b>150&&r<100)||(r>150&&b<100&&g<120))');
+  chk('전위 지형: 색칠된 도선 픽셀', potPxE>200, 'px='+potPxE);
+    await p.evaluate(()=>{ document.getElementById('vis-potential').click(); });
+
+  /* 5. 전하 카운터 + 실행 모드 스위치 토글 (병렬 추가 예제 회로) */
+  await p.evaluate(()=>{ const P=window.App.POE; P.loadCircuit(P.EXAMPLES[1]); if(!window.App.State.showCharge) document.getElementById('vis-charge').click(); });
+  await L.mode(p,'run'); await L.sleep(1200);
+  const q1E=await inkCount(p,'#canvas-anim','r<60&&g<100&&b>150&&a>0');   /* 파란 Q 글자 */
+  chk('전하 카운터 표시 (파란 텍스트 픽셀)', q1E>30, 'px='+q1E);
+  const togE=await p.evaluate(async()=>{
+    const S=window.App.State; const sw=S.components.find(c=>c.type==='SWITCH'&&c.on===false);
+    const gp=window.App.Geo.gridToPixel(sw.gridX,sw.gridY); const cp=CELL_SIZE*S.viewTransform.scale;
+    const rect=document.getElementById('canvas-main').getBoundingClientRect();
+    return {x:rect.left+gp.x+cp/2, y:rect.top+gp.y+cp/2, id:sw.id, srcI:Math.abs(S.solverResult.branchCurrents[S.components.find(c=>c.type==='DC_SOURCE').id])};
+  });
+  await p.mouse.click(togE.x,togE.y); await L.sleep(400);
+  const afterE=await p.evaluate((id)=>{const S=window.App.State; const sw=S.getComponent(id); return {on:sw.on, srcI:Math.abs(S.solverResult.branchCurrents[S.components.find(c=>c.type==='DC_SOURCE').id])};}, togE.id);
+  chk('실행 모드에서 스위치 클릭 → 닫힘, 전지 전류 2배 (120→240mA)', afterE.on===true&&Math.abs(togE.srcI-0.12)<1e-3&&Math.abs(afterE.srcI-0.24)<1e-3, JSON.stringify({before:togE.srcI, afterE}));
+    await L.mode(p,'edit');
+
   await b.close();
   let fail=0; R.forEach(x=>{ if(!x.ok) fail++; console.log((x.ok?'✓ ':'✗ ')+x.name+(x.ok?'':'   '+x.detail)); });
   console.log('─'.repeat(50)); console.log('검증 '+R.length+'건 / 실패 '+fail+'건'); process.exit(fail?1:0);

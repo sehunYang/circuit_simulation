@@ -5,6 +5,8 @@
 #undo-bar {
   position: absolute; bottom: 14px; left: 8px;
   z-index: 20; display: flex; gap: 2px;
+  /* 버튼이 늘어 모드 바와 겹치지 않도록 두 줄로 접는다 (편집 보조 / 표기·공유·POE) */
+  flex-wrap: wrap; width: 300px; row-gap: 6px; align-items: center;
 }
 /* 원형 버튼 공통 (undo·redo·가시토글 공유) */
 .undo-btn, .vis-btn {
@@ -28,3 +30,5 @@
 
 /* 표기 전환 버튼 앞 구분선 (#vis-sep 과 같은 모양) */
 #vis-sep2 { width: 1px; height: 22px; background: var(--border-base); margin: 0 4px; }
+#vis-sep3 { width: 1px; height: 22px; background: var(--border-base); margin: 0 4px; }
+#poe-btn { font-size: 10px; letter-spacing: 0.5px; }

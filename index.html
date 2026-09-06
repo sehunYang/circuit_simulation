@@ -122,6 +122,11 @@
     <button class="vis-btn active" id="vis-labels" title="소자 특성값 표시/숨김">Ω</button>
     <div id="vis-sep2"></div>
     <button class="vis-btn" id="vis-rail" title="회로이론 표기 — 접지·전원 레일 라벨로 그리기 (루프를 닫지 않아도 됨)">⏚</button>
+    <button class="vis-btn" id="vis-potential" title="전위 지형 — 도선을 전위로 색칠하고 전위를 표시">V</button>
+    <button class="vis-btn" id="vis-charge" title="전하 카운터 — 실행 모드에서 도선을 지나간 전하량 누적">Q</button>
+    <div id="vis-sep3"></div>
+    <button class="vis-btn" id="share-btn" title="공유 링크 복사 — 이 회로를 링크로 저장·배포">🔗</button>
+    <button class="vis-btn" id="poe-btn" title="예측·관찰·설명 (POE) — 오개념 진단 활동">POE</button>
   </div>
 
   <!-- 속성 패널 (소자 선택 시) — 내용은 JS(PropPanel)가 채움 -->
@@ -157,6 +162,17 @@
   </div>
   <canvas id="scope-canvas" width="352" height="170"></canvas>
   <div id="scope-legend"></div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     POE 패널 — 예측·관찰·설명 활동 (오개념 진단 세트, 진리표)
+     ════════════════════════════════════════════════════════════════ -->
+<div id="poe-panel">
+  <div class="tp-title">
+    <span>예측 · 관찰 · 설명</span>
+    <span class="tp-close" id="poe-close-btn">✕</span>
+  </div>
+  <div id="poe-body"></div>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════
@@ -199,6 +215,7 @@
 <script src="src/js/core/namespace.js"></script>                   <!-- 전역 App 네임스페이스 -->
 <script src="src/js/core/events.js"></script>                      <!-- 이벤트 버스 -->
 <script src="src/js/core/state.js"></script>                       <!-- 상태 저장소 + Undo/Redo -->
+<script src="src/js/core/share.js"></script>                       <!-- 회로 저장·공유 (URL 해시) -->
 <script src="src/js/geometry/geo.js"></script>                     <!-- 좌표 변환 · 포트 · 도선 경로 -->
 <script src="src/js/render/svg-shapes.js"></script>                <!-- 수능 지면 규격 토큰 + Canvas→SVG 기록기 -->
 <script src="src/js/render/symbols.js"></script>                   <!-- 소자 심볼 드로잉 -->
@@ -228,6 +245,7 @@
 <script src="src/js/ui/interaction.js"></script>                   <!-- 포인터 제스처 FSM -->
 <script src="src/js/ui/transient-graph.js"></script>               <!-- 과도 응답 그래프 -->
 <script src="src/js/ui/scope.js"></script>                         <!-- 오실로스코프 (파형 v(t)·i(t)) -->
+<script src="src/js/ui/poe.js"></script>                           <!-- 예측·관찰·설명 (POE) 활동 -->
 <script src="src/js/ui/val-popup.js"></script>                     <!-- 값 입력 팝업 -->
 <script src="src/js/ui/prop-panel.js"></script>                    <!-- 속성 패널 -->
 <script src="src/js/ui/toast.js"></script>                         <!-- 전역 에러 토스트 -->

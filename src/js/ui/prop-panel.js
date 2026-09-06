@@ -308,7 +308,7 @@ App.PropPanel=(function(){
       push('전압강하', _fmtVoltage(V));
       push('소비전력', _fmtPower(Math.abs(out.P||0)));
       var br=Math.max(0,out.brightness||0);
-      push('밝기', _makeBadge(br<0.02?'꺼짐':(Math.round(Math.min(br,1.5)*100)+' %'+(br>1.2?' (과부하)':'')),''));
+      push('밝기', _makeBadge(br<0.10?'꺼짐 ('+Math.round(br*100)+' %)':(Math.round(Math.min(br,1.5)*100)+' %'+(br>1.2?' (과부하)':'')),''));
       return rows;
     }
     /* 다이오드: 순방향/역방향 상태 */

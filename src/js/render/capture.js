@@ -94,7 +94,7 @@ App.Capture=(function(){
 
       /* 그 외 소자: 화면과 **같은** 그리기 함수를 그대로 통과시킨다 */
       App.Symbols.draw(g,comp.type,c.x,c.y,CS,comp.rotation,
-                       {color:SN.TOKENS.ink,lineWidth:lw});
+                       {color:SN.TOKENS.ink,lineWidth:lw,comp:comp});
     });
 
     /* ── 3. 특성값 라벨 (표시 중일 때만) ── */

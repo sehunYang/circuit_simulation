@@ -135,6 +135,9 @@ App.Solver=(function(){
     /* 예외: 비선형 + 교류(정류)는 패널 표시값이 파형에서만 나오므로 편집 모드에도 만든다 */
     var comps=App.State.components;
     var nlAC=comps.some(function(c){return NONLINEAR_TYPES[c.type];}) && comps.some(function(c){return c.type===TYPE.AC_SOURCE;});
+    /* 전후 비교용: 직전 결과를 잠시 보관 (배지가 '이전 → 지금' 을 몇 초간 보여 준다) */
+    var prev=App.State.solverResult;
+    if(prev&&prev.valid){ App.State.prevSolverResult=prev; App.State.prevSolverAt=Date.now(); }
     App.State.solverResult=solve(comps, App.State.wires, {closed:closed, noWave:!closed&&!nlAC});
     App.Events.emit('solver:done');
     return App.State.solverResult;

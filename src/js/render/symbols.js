@@ -188,8 +188,9 @@ App.Symbols=(function(){
   /* ── 스위치: 두 단자 접점 + 칼날 ──────────────────────────────────
    *   편집 모드 = 열림(칼날이 들려 있음), 실행·비유 모드 = 닫힘(수평).
    *   상태는 App.State.mode 로 판단한다 (드로어는 소자를 모른다). */
-  function drawSwitch(ctx,cx,cy,r){
-    var closed=!!(App.State&&App.State.mode&&App.State.mode!=='edit');
+  function drawSwitch(ctx,cx,cy,r,opts){
+    var comp=opts&&opts.comp;
+    var closed=!!(App.State&&App.State.mode&&App.State.mode!=='edit') && !(comp&&comp.on===false);
     var a=cx-r*.42, b=cx+r*.42, dot=r*.07;
     ctx.beginPath();
     ctx.moveTo(cx-r,cy); ctx.lineTo(a,cy);            // 좌측 단자선
@@ -279,7 +280,7 @@ App.Symbols=(function(){
   DRAWERS[TYPE.DIODE]     =function(ctx,cx,cy,r){ drawDiode(ctx,cx,cy,r); };
   DRAWERS[TYPE.NPN]       =function(ctx,cx,cy,r){ drawBJT(ctx,cx,cy,r,false); };
   DRAWERS[TYPE.PNP]       =function(ctx,cx,cy,r){ drawBJT(ctx,cx,cy,r,true); };
-  DRAWERS[TYPE.SWITCH]    =function(ctx,cx,cy,r){ drawSwitch(ctx,cx,cy,r); };
+  DRAWERS[TYPE.SWITCH]    =function(ctx,cx,cy,r,opts){ drawSwitch(ctx,cx,cy,r,opts); };
   DRAWERS[TYPE.GROUND]    =function(ctx,cx,cy,r){ drawGround(ctx,cx,cy,r); };
   DRAWERS[TYPE.LABEL]     =function(ctx,cx,cy,r){ drawRailLabel(ctx,cx,cy,r); };
   DRAWERS[TYPE.DC_SOURCE] =function(ctx,cx,cy,r){ drawDCSource(ctx,cx,cy,r); };
@@ -303,7 +304,7 @@ App.Symbols=(function(){
     var col=opts.color||App.SN.TOKENS.ink;
     ctx.strokeStyle=col; ctx.fillStyle=col;
     var fn=DRAWERS[type];
-    if(fn) fn(ctx,cx,cy,size/2);
+    if(fn) fn(ctx,cx,cy,size/2,opts);   /* opts.comp: 상태가 있는 소자(스위치 on/off) */
     ctx.restore();
   }
 

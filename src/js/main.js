@@ -456,6 +456,10 @@ App.Main=(function(){
     _refreshUndoBtns();
 
     _setupVisBtns();
+    if(App.POE) App.POE.init();
+
+    /* 공유 링크(#c=…)로 열렸으면 그 회로를 복원 */
+    if(App.Share&&App.Share.applyFromHash()) showErrorToast('공유된 회로를 불러왔습니다',1800);
 
     console.log('[Circuit Sim] 초기화 완료');
   }
@@ -489,6 +493,17 @@ App.Main=(function(){
         if(App.State.railNotation) showErrorToast('회로이론 표기: 접지(GND)·레일 라벨(VCC)로 그릴 수 있습니다',2200);
       });
     }
+
+    /* ── 전위 지형 · 전하 카운터 토글 ── */
+    _makeToggle('vis-potential','showPotential');
+    _makeToggle('vis-charge','showCharge');
+
+    /* ── 공유 링크 · POE ── */
+    var shareBtn=document.getElementById('share-btn');
+    if(shareBtn&&App.Share) shareBtn.addEventListener('click',function(){
+      if(!App.State.components.length){ showErrorToast('공유할 회로가 없습니다',1200); return; }
+      App.Share.copyLink();
+    });
 
     /* ── AC 감지 시 화살표 버튼 자동 비활성화 ──
      * AC 는 방향이 계속 바뀌어 화살표가 무의미하므로 강제로 끈다.
