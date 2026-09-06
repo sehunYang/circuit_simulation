@@ -374,7 +374,7 @@ App.EditRenderer=(function(){
     }
     if(doBadges)
     App.State.components.forEach(function(comp){
-      if(comp.type===TYPE.JUNCTION_3||comp.type===TYPE.JUNCTION_4) return;
+      if(NODE_TYPES[comp.type]) return;   /* 분기점·접지·라벨: 전류 없음 */
       var Ipeak=sr.branchCurrents[comp.id];
       if(Ipeak==null) return;   /* 0 도 그린다 — 도선 배지와 같은 이유 */
       var gp=App.Geo.gridToPixel(comp.gridX,comp.gridY);

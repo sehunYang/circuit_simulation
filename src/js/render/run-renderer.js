@@ -71,7 +71,7 @@ App.RunRenderer=(function(){
    * ─────────────────────────────────────────────────────────────── */
   function _updatePoolsAC(t, sr){
     var phasor = sr.acPhasor;
-    var jT     = {JUNCTION_3:1, JUNCTION_4:1};
+    var jT     = NODE_TYPES;   /* 분기점·접지·라벨: 전류를 모르는 연결점 */
 
     /* AC 순시 전류 계산 — 먼저 최대값 파악 */
     var wireInstI = {};  /* wire.id → 순시 전류 */

@@ -222,7 +222,7 @@ App.Geo=(function(){
   }
 
   return{gridToPixel,pixelToGrid,clampGrid,clampOffset,setViewSize,viewSize,
-         getPortPixel,getCompPorts,getPortGridPos,rotatePortId,
+         getPortPixel,getCompPorts,getPortGridPos,rotatePortId,rotatedDir,
          distToSegment,calcWirePath,getWireBendPoint,getBestDirection,
          wireConvDir};
 })();

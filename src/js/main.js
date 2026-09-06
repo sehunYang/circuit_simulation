@@ -47,7 +47,7 @@ App.Main=(function(){
   function _buildSidebar(){
     var sb=document.getElementById('sidebar');sb.innerHTML='';
     SIDEBAR_ITEMS.forEach(function(item,idx){
-      var div=document.createElement('div');div.className='sidebar-item';
+      var div=document.createElement('div');div.className='sidebar-item'+(item.rail?' rail':'');
       div.id='sidebar-item-'+item.type;  /* J4 위치 계산용 id */
       var cv=document.createElement('canvas');cv.width=32;cv.height=32;cv.style.pointerEvents='none';
       App.Symbols.drawMini(cv,item.type);
@@ -141,21 +141,23 @@ App.Main=(function(){
         if(cur==='run')     App.RunRenderer.stop();
         if(cur==='analogy') App.AnalogyRenderer.stop();
 
-        /* ── 편집 모드 진입 ── */
+        /* ── 편집 모드 진입 (스위치 열림) ── */
         if(next==='edit'){
           App.State.mode='edit';
           _updateModeBar('edit');
           App.TransientGraph.hide();
           _setAnalogyUIHidden(false);   /* UI 복원 (#6) */
+          App.Solver.solveNow();        /* 열림 상태로 즉시 재해석 */
           App.Events.emit('viewport:changed');
           return;
         }
 
-        /* ── 실행 모드 진입 ── */
+        /* ── 실행 모드 진입 (스위치 닫힘 = t=0) ── */
         if(next==='run'){
           App.State.mode='run';
           _updateModeBar('run');
           _setAnalogyUIHidden(false);   /* UI 복원 (#6) */
+          App.Solver.solveNow();        /* 닫힘 상태 결과가 있어야 렌더러가 시작할 수 있다 */
           App.RunRenderer.start();
           App.TransientGraph.show();  /* DC 동적 소자 있으면 그래프 표시 */
           return;
@@ -172,6 +174,7 @@ App.Main=(function(){
           App.State.mode='analogy';
           _updateModeBar('analogy');
           _setAnalogyUIHidden(true);    /* 패널·버튼 숨김 (#6) */
+          App.Solver.solveNow();        /* 비유 모드 = 닫힘 (▶ 가 t=0) */
           App.AnalogyRenderer.start();
           return;
         }
@@ -212,10 +215,37 @@ App.Main=(function(){
     }return null;
   }
 
+  /* 전원의 + 단자(ports[0]) 쪽 옆 칸에 스위치를 자동 생성해 연결한다.
+   *   편집 모드 = 열림, 실행·비유 모드 = 닫힘(t=0). 전원과 함께 삭제되고
+   *   단독 삭제는 막힌다 (State.removeComponent). 옆 칸이 막혀 있으면
+   *   반대쪽(− 단자)을 시도하고, 그것도 안 되면 생성하지 않는다. */
+  function attachAutoSwitch(src){
+    if(!AUTO_SWITCH_FOR_SOURCE) return null;
+    if(src.type!==TYPE.DC_SOURCE&&src.type!==TYPE.AC_SOURCE) return null;
+    var ports=App.Geo.getCompPorts(src);
+    for(var pi=0;pi<ports.length;pi++){
+      var d=App.Geo.rotatedDir(ports[pi], src.rotation);
+      if(!d) continue;
+      var gx=src.gridX+d.dx, gy=src.gridY+d.dy;
+      var cg=App.Geo.clampGrid(gx,gy);
+      if(cg.gridX!==gx||cg.gridY!==gy) continue;
+      if(App.State.isOccupied(gx,gy,null)) continue;
+      var sw={id:App.State.genId(),type:TYPE.SWITCH,gridX:gx,gridY:gy,rotation:src.rotation,
+              value:0,value2:null,label:'',autoFor:src.id};
+      App.State.addComponent(sw);
+      App.State.autoConnectAdjacent(sw.id);
+      return sw;
+    }
+    showErrorToast('스위치를 놓을 자리가 없어 전원만 배치했습니다',2000);
+    return null;
+  }
+
   function _place(item,gx,gy){
     var comp={id:App.State.genId(),type:item.type,gridX:gx,gridY:gy,rotation:0,value:item.defValue,value2:item.defValue2,label:''};
+    if(item.type===TYPE.LABEL) comp.label=item.label||'VCC';   /* 레일 이름 */
     App.State.addComponent(comp);          // state:changed emit
     App.State.autoConnectAdjacent(comp.id); // 인접 포트 자동 연결 (중복 emit 무해)
+    attachAutoSwitch(comp);
     App.State.selectedId=comp.id;
     App.PropPanel.show(comp.id);
     App.EditRenderer.startSelAnimation();
@@ -391,6 +421,19 @@ App.Main=(function(){
     _makeToggle('vis-badges','showBadges');
     _makeToggle('vis-labels','showLabels');
 
+    /* ── 회로이론 표기 모드 (접지·레일 라벨) 토글 ──
+     *   팔레트에 접지·라벨 항목을 보이게 할 뿐, 해석은 늘 같다
+     *   (같은 이름의 라벨 = 같은 노드, 접지 = 기준 노드). */
+    var railBtn=document.getElementById('vis-rail');
+    if(railBtn){
+      railBtn.addEventListener('click',function(){
+        App.State.railNotation=!App.State.railNotation;
+        railBtn.classList.toggle('active',App.State.railNotation);
+        document.getElementById('sidebar').classList.toggle('rail-mode',App.State.railNotation);
+        if(App.State.railNotation) showErrorToast('회로이론 표기: 접지(GND)·레일 라벨(VCC)로 그릴 수 있습니다',2200);
+      });
+    }
+
     /* ── AC 감지 시 화살표 버튼 자동 비활성화 ──
      * AC 는 방향이 계속 바뀌어 화살표가 무의미하므로 강제로 끈다.
      * 다만 이 함수는 'solver:done' 마다 불리므로, DC 분기에서
@@ -427,7 +470,7 @@ App.Main=(function(){
     _syncArrowsForAC();
   }
 
-  return{init,placeComponent,addComponentCenter};
+  return{init,placeComponent,addComponentCenter,attachAutoSwitch};
 })();
 
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',function(){App.Main.init();});

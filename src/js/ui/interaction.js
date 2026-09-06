@@ -747,7 +747,10 @@ App.Interaction=(function(){
   // ═══ 키보드 단축키 ═══
   function _deleteSelected(){
     var id=App.State.selectedId;if(!id) return;
-    if(App.State.getComponent(id)){App.State.removeComponent(id);App.EditRenderer.stopSelAnimation();App.PropPanel.hide();}
+    if(App.State.getComponent(id)){
+      if(!App.State.removeComponent(id)){ showErrorToast('전원에 딸린 스위치는 전원과 함께 삭제됩니다',1800); return; }
+      App.EditRenderer.stopSelAnimation();App.PropPanel.hide();
+    }
     else if(App.State.getWire(id)){App.State.removeWire(id);App.EditRenderer.stopSelAnimation();App.PropPanel.hide();}
   }
   function _rotateSelected(){
@@ -780,9 +783,11 @@ App.Interaction=(function(){
       }}
     }
     if(!empty){showErrorToast('복제할 공간이 없습니다.');return;}
+    if(comp.type===TYPE.SWITCH&&comp.autoFor){showErrorToast('전원에 딸린 스위치는 복제할 수 없습니다.');return;}
     var dup=JSON.parse(JSON.stringify(comp));
     dup.id=App.State.genId();dup.gridX=empty.gridX;dup.gridY=empty.gridY;
     App.State.addComponent(dup);
+    App.Main.attachAutoSwitch(dup);   /* 전원이면 스위치도 함께 */
     App.State.selectedId=dup.id;
     App.PropPanel.show(dup.id);
     App.EditRenderer.startSelAnimation();

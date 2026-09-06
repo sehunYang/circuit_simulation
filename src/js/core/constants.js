@@ -9,7 +9,17 @@ var TYPE = Object.freeze({
   RESISTOR:   'RESISTOR',   CAPACITOR:  'CAPACITOR',
   INDUCTOR:   'INDUCTOR',
   JUNCTION_3: 'JUNCTION_3', JUNCTION_4: 'JUNCTION_4',
+  SWITCH:     'SWITCH',     /* 편집 모드 = 열림, 실행·비유 모드 = 닫힘 */
+  GROUND:     'GROUND',     /* 회로이론 표기: 기준 노드(0 V), 1포트 */
+  LABEL:      'LABEL',      /* 회로이론 표기: 전원 레일 라벨 — 같은 이름 = 같은 노드, 1포트 */
 });
+
+/* 스탬프·전류·라벨이 없는 '연결점' 소자 (분기점·접지·레일 라벨).
+ *   배지·특성값 라벨·측정값 표시에서 건너뛴다. */
+var NODE_TYPES = Object.freeze({ JUNCTION_3:true, JUNCTION_4:true, GROUND:true, LABEL:true });
+
+/* 전원을 놓으면 + 단자 쪽에 자동 생성되는 스위치 — 삭제 불가, 전원과 함께 삭제됨 */
+var AUTO_SWITCH_FOR_SOURCE = true;
 
 /* ════════════════════════════════════════════════════════════════════
  * 그리드 & 뷰포트
@@ -51,15 +61,20 @@ var SIDEBAR_ITEMS = [
   { type:TYPE.INDUCTOR,   label:'L',   defValue:10e-3,   defValue2:null, shortUnit:'mH' },
   { type:TYPE.JUNCTION_3, label:'J3',  defValue:0,       defValue2:null, shortUnit:''   },
   { type:TYPE.JUNCTION_4, label:'J4',  defValue:0,       defValue2:null, shortUnit:''   },
+  { type:TYPE.SWITCH,     label:'SW',  defValue:0,       defValue2:null, shortUnit:''   },
+  /* 회로이론 표기 모드에서만 보이는 항목 (rail:true) */
+  { type:TYPE.GROUND,     label:'GND', defValue:0,       defValue2:null, shortUnit:'', rail:true },
+  { type:TYPE.LABEL,      label:'VCC', defValue:0,       defValue2:null, shortUnit:'', rail:true },
 ];
 
 /* 소자별 포트 문자열 (rotation=0 로컬 기준)
  *   L=좌, R=우, T=상, B=하
- *   2단자 소자는 'LR', 분기점은 다중 포트 */
+ *   2단자 소자는 'LR', 분기점은 다중 포트, 접지·라벨은 1포트 */
 var COMP_PORTS = {
   DC_SOURCE:'LR', AC_SOURCE:'LR', RESISTOR:'LR',
-  CAPACITOR:'LR', INDUCTOR:'LR',
+  CAPACITOR:'LR', INDUCTOR:'LR', SWITCH:'LR',
   JUNCTION_3:'LRB', JUNCTION_4:'LRTB',
+  GROUND:'T', LABEL:'B',
 };
 
 /* 다중 연결 허용 타입 (분기점) — 한 포트에 여러 도선 연결 가능 */

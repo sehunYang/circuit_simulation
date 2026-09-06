@@ -1052,6 +1052,13 @@ App.AnalogyRenderer=(function(){
         case TYPE.INDUCTOR:  _buildInductor(c); break;
         case TYPE.JUNCTION_3:
         case TYPE.JUNCTION_4: _buildJunction(c); break;
+        case TYPE.SWITCH: {
+          /* 비유 모드는 닫힘 상태 — 스위치 자리는 곧은 수로 한 토막 */
+          var ports=App.Geo.getCompPorts(c);
+          var pA=_portPos(c,ports[0]), pB=_portPos(c,ports[1]);
+          if(pA.distanceTo(pB)>0.02){ _scene.add(_troughBetween(pA,pB)); }
+          break;
+        }
       }
       /* 소자 이름·값 라벨 (분기점은 특성값이 없으므로 제외) */
       if(c.type!==TYPE.JUNCTION_3 && c.type!==TYPE.JUNCTION_4){
@@ -1853,7 +1860,7 @@ App.AnalogyRenderer=(function(){
       var si=(sr.wireSignedI&&sr.wireSignedI[w.id]!=null)?sr.wireSignedI[w.id]:0;
       var fromComp=App.State.getComponent(w.fromId);
       var toComp=App.State.getComponent(w.toId);
-      var isJ=function(cc){return cc&&(cc.type===TYPE.JUNCTION_3||cc.type===TYPE.JUNCTION_4);};
+      var isJ=function(cc){return cc&&(NODE_TYPES[cc.type]||cc.type===TYPE.SWITCH);};
       var refId=null, refIsFrom=true, refPort=null;
       if(!isJ(fromComp)&&byComp[w.fromId]){ refId=w.fromId; refIsFrom=true; refPort=w.fromPort; }
       else if(!isJ(toComp)&&byComp[w.toId]){ refId=w.toId; refIsFrom=false; refPort=w.toPort; }

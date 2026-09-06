@@ -407,7 +407,7 @@ App.TransientGraph=(function(){
       App.State.wires.forEach(function(w){
         var fromComp=App.State.getComponent(w.fromId);
         var toComp=App.State.getComponent(w.toId);
-        var isJ=function(cc){return cc&&(cc.type===TYPE.JUNCTION_3||cc.type===TYPE.JUNCTION_4);};
+        var isJ=function(cc){return cc&&(NODE_TYPES[cc.type]||cc.type===TYPE.SWITCH);};
         var refId=null, refIsFrom=true, refPort=null;
         if(!isJ(fromComp) && byComp[w.fromId]){ refId=w.fromId; refIsFrom=true; refPort=w.fromPort; }
         else if(!isJ(toComp) && byComp[w.toId]){ refId=w.toId; refIsFrom=false; refPort=w.toPort; }

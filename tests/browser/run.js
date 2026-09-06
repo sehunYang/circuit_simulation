@@ -186,6 +186,88 @@ async function blobCount(p){
   const mode=await p.evaluate(()=>window.App.State.mode);
   chk('AC 회로는 비유 모드 진입 차단', mode!=='analogy', 'mode='+mode);
 
+  /* ══ 스위치 · 열림/닫힘 · 회로이론 표기 (엔진 v2, A 단계) ══ */
+  const errs=[]; p.on('pageerror',e=>errs.push(e.message)); p.on('console',m=>{if(m.type()==='error')errs.push(m.text());});
+
+  /* 1. 팔레트 배치 경로로 전원 → 스위치 자동 생성 */
+  const r1=await p.evaluate(()=>{
+    const S=window.App.State; while(S.components.length) S.removeComponent(S.components[0].id);
+    const item=SIDEBAR_ITEMS.find(i=>i.type==='DC_SOURCE');
+    window.App.Main.addComponentCenter(item);
+    const src=S.components.find(c=>c.type==='DC_SOURCE'), sw=S.components.find(c=>c.type==='SWITCH');
+    return {n:S.components.length, hasSw:!!sw, autoFor:sw&&sw.autoFor===src.id, wires:S.wires.length,
+            swPos: sw?[sw.gridX-src.gridX, sw.gridY-src.gridY]:null, blocked: sw? S.removeComponent(sw.id)===false : null,
+            stillThere: !!S.components.find(c=>c.type==='SWITCH')};
+  });
+  chk('전원 배치 → 스위치 자동 생성·연결', r1.hasSw&&r1.autoFor&&r1.wires===1, JSON.stringify(r1));
+  chk('자동 스위치는 단독 삭제 불가', r1.blocked===true&&r1.stillThere, JSON.stringify(r1));
+
+  /* 2. 전원+스위치+저항 루프: 편집(열림) vs 실행(닫힘) */
+  const r2=await p.evaluate(()=>{
+    const S=window.App.State;
+    const src=S.components.find(c=>c.type==='DC_SOURCE'), sw=S.components.find(c=>c.type==='SWITCH');
+    /* 저항을 전원 오른쪽 아래에 두고 도선 2개로 루프 */
+    const res={id:S.genId(),type:'RESISTOR',gridX:src.gridX+2,gridY:src.gridY+2,rotation:0,value:100,value2:null,label:''};
+    S.addComponent(res);
+    S.addWire({id:S.genId(),fromId:sw.id,fromPort:'L',toId:res.id,toPort:'L',direction:'V-first'});
+    S.addWire({id:S.genId(),fromId:res.id,fromPort:'R',toId:src.id,toPort:'R',direction:'V-first'});
+    window.__ids={src:src.id,sw:sw.id,res:res.id};
+    const sr=window.App.Solver.solveNow();
+    return {mode:S.mode, valid:sr.valid, err:sr.error, hasSw:sr.hasSwitches, closedFlag:sr.switchesClosed,
+            Iopen:sr.branchCurrents[res.id], VswOpen:sr.componentVoltages[sw.id],
+            Iclosed:sr.closed.branchCurrents[res.id], VswClosed:sr.closed.componentVoltages[sw.id]};
+  });
+  chk('편집 모드 = 열림: 저항 전류 0', r2.valid&&Math.abs(r2.Iopen)<1e-9, JSON.stringify(r2));
+  chk('열린 스위치 양단 전압 = 기전력 12V', Math.abs(Math.abs(r2.VswOpen)-12)<1e-6, 'Vsw='+r2.VswOpen);
+  chk('닫으면 뷰: 저항 전류 120mA', Math.abs(Math.abs(r2.Iclosed)-0.12)<1e-6, 'I='+r2.Iclosed);
+  chk('닫힌 스위치 양단 전압 0', Math.abs(r2.VswClosed)<1e-6, 'V='+r2.VswClosed);
+
+  /* 속성 패널 두 열 */
+  await p.evaluate(()=>{const id=window.__ids.res; window.App.State.selectedId=id; window.App.PropPanel.show(id);});
+  const panel=await p.evaluate(()=>document.getElementById('prop-content').textContent);
+  chk("패널에 '열림(지금)'·'닫으면' 두 열", /열림\(지금\)/.test(panel)&&/닫으면/.test(panel)&&/120\.000 mA/.test(panel)&&/0 A/.test(panel), panel.slice(0,200));
+
+  /* 실행 모드 → 닫힘 */
+  await L.mode(p,'run'); await L.sleep(500);
+  const r3=await p.evaluate(()=>{const sr=window.App.State.solverResult; return {mode:window.App.State.mode, I:sr.branchCurrents[window.__ids.res], closed:sr.switchesClosed};});
+  chk('실행 모드 = 닫힘: 120mA', r3.closed&&Math.abs(Math.abs(r3.I)-0.12)<1e-6, JSON.stringify(r3));
+  await L.mode(p,'edit'); await L.sleep(300);
+  const r4=await p.evaluate(()=>{const sr=window.App.State.solverResult; return {closed:sr.switchesClosed, I:sr.branchCurrents[window.__ids.res]};});
+  chk('편집 복귀 = 열림', r4.closed===false&&Math.abs(r4.I)<1e-9, JSON.stringify(r4));
+
+  /* 3. 전원 삭제 → 스위치 함께 삭제 */
+  const r5=await p.evaluate(()=>{const S=window.App.State; S.removeComponent(window.__ids.src); return S.components.map(c=>c.type);});
+  chk('전원 삭제 시 자동 스위치도 삭제', r5.indexOf('SWITCH')<0&&r5.indexOf('DC_SOURCE')<0, JSON.stringify(r5));
+
+  /* 4. 회로이론 표기: 루프를 닫지 않고 접지·레일로 */
+  const r6=await p.evaluate(()=>{
+    const S=window.App.State; while(S.components.length) S.removeComponent(S.components[0].id);
+    const add=(type,gx,gy,rot,value,label)=>{const c={id:S.genId(),type,gridX:gx,gridY:gy,rotation:rot||0,value:value||0,value2:null,label:label||''}; S.addComponent(c); return c;};
+    /* 전원: 위 = VCC 라벨, 아래 = 접지 (닫힌 루프 없음) */
+    const src=add('DC_SOURCE',48,50,90,12);
+    const lab1=add('LABEL',48,48,0,0,'VCC');      /* 포트 B at (48.5,49) ← 전원 T port at (48.5,50)? 도선으로 연결 */
+    const gnd1=add('GROUND',48,52,0,0);
+    const lab2=add('LABEL',54,48,0,0,'VCC');
+    const res=add('RESISTOR',54,50,90,100);
+    const gnd2=add('GROUND',54,52,0,0);
+    S.addWire({id:S.genId(),fromId:lab1.id,fromPort:'B',toId:src.id,toPort:'L',direction:'V-first'});
+    S.addWire({id:S.genId(),fromId:src.id,fromPort:'R',toId:gnd1.id,toPort:'T',direction:'V-first'});
+    S.addWire({id:S.genId(),fromId:lab2.id,fromPort:'B',toId:res.id,toPort:'L',direction:'V-first'});
+    S.addWire({id:S.genId(),fromId:res.id,fromPort:'R',toId:gnd2.id,toPort:'T',direction:'V-first'});
+    const sr=window.App.Solver.solveNow();
+    window.__ids={res:res.id};
+    return {valid:sr.valid, err:sr.error, I:sr.branchCurrents[res.id], V:sr.componentVoltages[res.id], warn:sr.warnings};
+  });
+  chk('레일 표기: VCC–R–GND 가 전원 VCC–GND 와 같은 노드로 풀림 (120mA)', r6.valid&&Math.abs(Math.abs(r6.I)-0.12)<1e-6, JSON.stringify(r6));
+
+  /* 촬영 · 비유 모드 · 실행 모드 콘솔 오류 없음 */
+  await p.evaluate(()=>window.App.Capture.buildSceneCanvas(1).toDataURL().length);
+  await L.mode(p,'run'); await L.sleep(400); await L.mode(p,'analogy'); await L.sleep(1500); await L.mode(p,'edit');
+  await p.evaluate(()=>{document.getElementById('vis-rail').click();});
+  const railVisible=await p.evaluate(()=>getComputedStyle(document.getElementById('sidebar-item-GROUND')).display);
+  chk('표기 토글 → 접지 팔레트 항목 표시', railVisible!=='none', railVisible);
+  chk('콘솔·페이지 오류 없음', errs.length===0, errs.slice(0,3).join(' | '));
+
   await b.close();
   let fail=0; R.forEach(x=>{ if(!x.ok) fail++; console.log((x.ok?'✓ ':'✗ ')+x.name+(x.ok?'':'   '+x.detail)); });
   console.log('─'.repeat(50)); console.log('검증 '+R.length+'건 / 실패 '+fail+'건'); process.exit(fail?1:0);

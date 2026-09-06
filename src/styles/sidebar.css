@@ -33,3 +33,7 @@
 }
 .sidebar-clear:hover { background: #fbdada; border-color: #e09a9a; }
 .sidebar-clear .s-label { color: var(--danger-text); }
+
+/* 회로이론 표기(접지·레일 라벨) 항목 — 표기 모드에서만 보인다 */
+.sidebar-item.rail { display: none; }
+#sidebar.rail-mode .sidebar-item.rail { display: flex; }

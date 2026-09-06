@@ -36,9 +36,13 @@ function makeApp(){
       return null;
     },
   };
-  load('src/js/circuit/topology.js');
-  load('src/js/circuit/solver.js');
-  load('src/js/ui/transient-graph.js');
+  /* 회로 해석 엔진 — index.html 과 같은 순서 */
+  ['circuit/netlist.js','circuit/mna.js',
+   'circuit/devices/index.js','circuit/devices/resistor.js','circuit/devices/capacitor.js',
+   'circuit/devices/inductor.js','circuit/devices/vsource.js',
+   'circuit/analysis/op.js','circuit/analysis/ac.js',
+   'circuit/post/wires.js','circuit/post/result.js',
+   'circuit/solver.js','ui/transient-graph.js'].forEach(function(f){ load('src/js/'+f); });
   return sandbox;
 }
 
@@ -329,7 +333,9 @@ async function main(){
     void Rb;
     var sr2=await solveCircuit(sb2,c2);
     scenario('ERR-1b 분리된 부품 → 개방 회로');
-    expectError("'회로가 열려 있습니다'", sr2, '열려');
+    /* 엔진 v2: 분리된 부품은 오류가 아니라 경고 + 전류 0 (열린 회로 = 정상 상태) */
+    check("분리된 부품 → 유효 + 경고 '전원과 연결되지 않은'", sr2.valid && sr2.warnings && sr2.warnings.some(function(w){return w.indexOf('연결되지')>=0;}),
+          'valid='+sr2.valid+' warnings='+JSON.stringify(sr2.warnings));
 
     var sb3=makeApp(), c3=circuit(sb3);
     var V3=c3.add('DC_SOURCE',12);
@@ -785,6 +791,57 @@ async function main(){
     [wA,wB,wC].forEach(function(w){ approx('도선 '+w.id+' 전류=0', Math.abs(sr.wireCurrents[w.id]), 0, 0, 1e-12); });
     check('RC 가지 도선 전류가 null 이 아님 (배지 표시 대상)', sr.wireCurrents[wB.id]!=null);
     approx('전원 전류=0.12', Math.abs(sr.branchCurrents[V.id]), 0.12, 1e-6);
+  })();
+
+  /* ── NL-1: 스위치 — 열림/닫힘 두 뷰 (편집 = 열림, 실행 = 닫힘) ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('DC_SOURCE',12), SW=c.add('SWITCH',0), R=c.add('RESISTOR',100);
+    c.wire(V,'L',SW,'R'); c.wire(SW,'L',R,'L'); c.wire(R,'R',V,'R');
+    var srC=sb.App.Solver.solve(c.comps,c.wires,{closed:true});
+    var srO=sb.App.Solver.solve(c.comps,c.wires,{closed:false});
+    scenario('NL-1 스위치: 닫힘 120mA / 열림 0 + 스위치 양단 = 기전력');
+    check('hasSwitches', srC.hasSwitches===true&&srO.hasSwitches===true);
+    approx('닫힘: I_R=0.12', Math.abs(srC.branchCurrents[R.id]), 0.12, 1e-6);
+    approx('닫힘: 스위치 전류=0.12 (도선 후처리)', Math.abs(srC.branchCurrents[SW.id]), 0.12, 1e-6);
+    approx('닫힘: 스위치 양단 0V', srC.componentVoltages[SW.id], 0, 0, 1e-9);
+    approx('열림: I_R=0', Math.abs(srO.branchCurrents[R.id]), 0, 0, 1e-9);
+    approx('열림: 스위치 양단 = 12V', Math.abs(srO.componentVoltages[SW.id]), 12, 1e-6);
+    check('열림 뷰의 closed 서브뷰 = 닫힘 결과', Math.abs(Math.abs(srO.closed.branchCurrents[R.id])-0.12)<1e-6);
+    check('switchState 표시', srO.switchState==='open'&&srC.switchState==='closed');
+  })();
+
+  /* ── NL-2: 회로이론 표기 — 접지·레일 라벨로 루프 없이 (VCC–R–GND) ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('DC_SOURCE',12), L1=c.add('LABEL',0), G1=c.add('GROUND',0);
+    var L2=c.add('LABEL',0), R=c.add('RESISTOR',100), G2=c.add('GROUND',0);
+    L1.label='VCC'; L2.label='VCC';
+    c.wire(L1,'B',V,'L'); c.wire(V,'R',G1,'T');
+    c.wire(L2,'B',R,'L'); c.wire(R,'R',G2,'T');
+    var sr=await solveCircuit(sb,c);
+    scenario('NL-2 접지·레일 라벨: 같은 이름 = 같은 노드, 접지 = 0V');
+    check('유효', sr.valid, sr.error);
+    approx('I_R=0.12', Math.abs(sr.branchCurrents[R.id]), 0.12, 1e-6);
+    approx('접지 노드 전위 0', sr.nodeVoltages[sr.componentNodes[G2.id][0]], 0, 0, 1e-12);
+    approx('VCC 노드 전위 12', Math.abs(sr.nodeVoltages[sr.componentNodes[L2.id][0]]), 12, 1e-6);
+    check('경고 없음 (모두 연결됨)', !sr.warnings.length, JSON.stringify(sr.warnings));
+    /* 이름이 다른 라벨은 이어지지 않는다 → R 쪽은 전원 없는 섬 */
+    L2.label='VDD';
+    var sr2=await solveCircuit(sb,c);
+    check("다른 이름 라벨 → '짝이 없습니다' 경고 + I_R=0", sr2.valid&&sr2.warnings.some(function(w){return w.indexOf('VDD')>=0;})&&Math.abs(sr2.branchCurrents[R.id])<1e-9,
+          'warn='+JSON.stringify(sr2.warnings)+' I='+sr2.branchCurrents[R.id]);
+  })();
+
+  /* ── NL-3: 열린 스위치 + 축전기 — 부동 노드가 특이행렬을 만들지 않는다 ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('DC_SOURCE',12), SW=c.add('SWITCH',0), R=c.add('RESISTOR',100), C=c.add('CAPACITOR',100e-6);
+    c.wire(V,'L',SW,'R'); c.wire(SW,'L',R,'L'); c.wire(R,'R',C,'L'); c.wire(C,'R',V,'R');
+    var srO=sb.App.Solver.solve(c.comps,c.wires,{closed:false});
+    scenario('NL-3 열린 스위치 + 축전기: 부동 노드 해석 가능');
+    check('유효', srO.valid, srO.error);
+    approx('전류 0', Math.abs(srO.branchCurrents[R.id]), 0, 0, 1e-9);
   })();
 
   /* ════════════ 결과 출력 ════════════ */

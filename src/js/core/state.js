@@ -84,13 +84,21 @@ App.State=(function(){
 
     /* ── 회로 변경 ── */
     addComponent:function(c){ _mutate(function(){ s.components.push(c); }); },
+    /* 소자 삭제.
+     *   · 전원에 자동 생성된 스위치(auto)는 단독으로 지울 수 없다 → false 반환
+     *   · 전원을 지우면 그 자동 스위치도 함께 지운다 */
     removeComponent:function(id){
+      var target=api.getComponent(id);
+      if(target&&target.type===TYPE.SWITCH&&target.autoFor&&api.getComponent(target.autoFor)) return false;
+      var ids={}; ids[id]=true;
+      s.components.forEach(function(c){ if(c.type===TYPE.SWITCH&&c.autoFor===id) ids[c.id]=true; });
       _mutate(function(){
         /* 규칙: 도선 먼저 제거 후 소자 제거 (역순 금지) */
-        s.wires=s.wires.filter(function(w){return w.fromId!==id&&w.toId!==id;});
-        s.components=s.components.filter(function(c){return c.id!==id;});
-        if(s.selectedId===id)s.selectedId=null;
+        s.wires=s.wires.filter(function(w){return !ids[w.fromId]&&!ids[w.toId];});
+        s.components=s.components.filter(function(c){return !ids[c.id];});
+        if(ids[s.selectedId])s.selectedId=null;
       });
+      return true;
     },
     addWire:function(w){ _mutate(function(){ s.wires.push(w); }); },
     removeWire:function(id){

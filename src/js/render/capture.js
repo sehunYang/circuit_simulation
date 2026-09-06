@@ -100,7 +100,7 @@ App.Capture=(function(){
     /* ── 3. 특성값 라벨 (표시 중일 때만) ── */
     if(App.State.showLabels){
       App.State.components.forEach(function(comp){
-        if(comp.type===TYPE.JUNCTION_3||comp.type===TYPE.JUNCTION_4) return;
+        if(NODE_TYPES[comp.type]&&comp.type!==TYPE.LABEL) return;   /* 레일 이름은 찍는다 */
         var text=App.Symbols.makeLabel(comp);
         if(!text) return;
         var c=_center(comp);

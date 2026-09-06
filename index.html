@@ -120,6 +120,8 @@
     <button class="vis-btn"        id="vis-arrows" title="전류 방향 화살표 표시/숨김">▶</button>
     <button class="vis-btn"        id="vis-badges" title="전류 세기 배지 표시/숨김">A</button>
     <button class="vis-btn active" id="vis-labels" title="소자 특성값 표시/숨김">Ω</button>
+    <div id="vis-sep2"></div>
+    <button class="vis-btn" id="vis-rail" title="회로이론 표기 — 접지·전원 레일 라벨로 그리기 (루프를 닫지 않아도 됨)">⏚</button>
   </div>
 
   <!-- 속성 패널 (소자 선택 시) — 내용은 JS(PropPanel)가 채움 -->
@@ -188,8 +190,19 @@
 <script src="src/js/geometry/geo.js"></script>                     <!-- 좌표 변환 · 포트 · 도선 경로 -->
 <script src="src/js/render/svg-shapes.js"></script>                <!-- 수능 지면 규격 토큰 + Canvas→SVG 기록기 -->
 <script src="src/js/render/symbols.js"></script>                   <!-- 소자 심볼 드로잉 -->
-<script src="src/js/circuit/topology.js"></script>                 <!-- 토폴로지 분석 (Union-Find) -->
-<script src="src/js/circuit/solver.js"></script>                   <!-- MNA 회로 해석기 -->
+<!-- 회로 해석 엔진 (src/js/circuit/) — 순서: 회로망 → 행렬 코어 → 소자 → 해석 → 후처리 → 오케스트레이터 -->
+<script src="src/js/circuit/netlist.js"></script>                  <!-- 그림 → 회로망 (노드 병합·스위치·접지·라벨·섬) -->
+<script src="src/js/circuit/mna.js"></script>                      <!-- MNA 행렬 코어 (실수·복소 가우스 소거) -->
+<script src="src/js/circuit/devices/index.js"></script>            <!-- 소자 레지스트리 -->
+<script src="src/js/circuit/devices/resistor.js"></script>
+<script src="src/js/circuit/devices/capacitor.js"></script>
+<script src="src/js/circuit/devices/inductor.js"></script>
+<script src="src/js/circuit/devices/vsource.js"></script>
+<script src="src/js/circuit/analysis/op.js"></script>              <!-- 동작점 (Newton-Raphson) -->
+<script src="src/js/circuit/analysis/ac.js"></script>              <!-- 소신호 페이저 -->
+<script src="src/js/circuit/post/wires.js"></script>               <!-- 도선 전류 KCL 필링 -->
+<script src="src/js/circuit/post/result.js"></script>              <!-- 뷰 조립 · 표시 규약 -->
+<script src="src/js/circuit/solver.js"></script>                   <!-- 오케스트레이터 -->
 <script src="src/js/render/grid-renderer.js"></script>             <!-- 격자 배경 렌더러 -->
 <script src="src/js/render/edit-renderer.js"></script>             <!-- 편집 모드 렌더러 -->
 <script src="src/js/render/run-renderer.js"></script>              <!-- 실행 모드 전자 애니메이션 -->

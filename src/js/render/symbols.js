@@ -130,7 +130,8 @@ App.Symbols=(function(){
    *   대비해 흰색 헤일로(외곽선)를 깔아 가독성을 확보한다.
    * ════════════════════════════════════════════════════════════════ */
   function labelOffsetRatio(type){
-    /* 전원은 심볼이 크므로 라벨을 더 아래로 */
+    /* 전원은 심볼이 크므로 라벨을 더 아래로, 레일 라벨은 이름을 심볼 위에 */
+    if(type===TYPE.LABEL) return -0.62;
     return (type===TYPE.DC_SOURCE||type===TYPE.AC_SOURCE)?0.52:0.44;
   }
   function labelFontSize(cellPx){
@@ -140,8 +141,8 @@ App.Symbols=(function(){
 
   function drawLabel(ctx,comp,cx,cy,cellPx){
     var type=comp.type;
-    if(type===TYPE.JUNCTION_3||type===TYPE.JUNCTION_4) return;  // 분기점은 라벨 없음
-    if(!App.State.showLabels) return;                          // 특성값 숨김 상태
+    if(NODE_TYPES[type]&&type!==TYPE.LABEL) return;             // 분기점·접지는 라벨 없음
+    if(!App.State.showLabels&&type!==TYPE.LABEL) return;       // 특성값 숨김 (레일 이름은 항상)
     var text=_makeLabel(comp);
     if(!text) return;
 
@@ -152,6 +153,7 @@ App.Symbols=(function(){
 
   /* 소자 값 → 표시 문자열 (SI 접두어 자동 선택) */
   function _makeLabel(comp){
+    if(comp.type===TYPE.LABEL) return (comp.label&&comp.label.trim())||'VCC';   /* 레일 이름 */
     var v=comp.value; if(v==null) return '';
     switch(comp.type){
       case TYPE.DC_SOURCE: return v+' V';
@@ -177,7 +179,49 @@ App.Symbols=(function(){
    * ════════════════════════════════════════════════════════════════ */
 
   /* 타입→그리기 함수 디스패치 테이블 */
+  /* ── 스위치: 두 단자 접점 + 칼날 ──────────────────────────────────
+   *   편집 모드 = 열림(칼날이 들려 있음), 실행·비유 모드 = 닫힘(수평).
+   *   상태는 App.State.mode 로 판단한다 (드로어는 소자를 모른다). */
+  function drawSwitch(ctx,cx,cy,r){
+    var closed=!!(App.State&&App.State.mode&&App.State.mode!=='edit');
+    var a=cx-r*.42, b=cx+r*.42, dot=r*.07;
+    ctx.beginPath();
+    ctx.moveTo(cx-r,cy); ctx.lineTo(a,cy);            // 좌측 단자선
+    ctx.moveTo(b,cy);    ctx.lineTo(cx+r,cy);         // 우측 단자선
+    ctx.stroke();
+    /* 칼날: 좌 접점에서 우 접점으로, 열리면 위로 들림 */
+    var ang=closed?0:-0.55;
+    var len=(b-a)*1.02;
+    ctx.beginPath();
+    ctx.moveTo(a,cy); ctx.lineTo(a+len*Math.cos(ang), cy+len*Math.sin(ang));
+    ctx.stroke();
+    /* 접점 (작은 원) */
+    ctx.beginPath(); ctx.arc(a,cy,dot,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(b,cy,dot,0,Math.PI*2); ctx.fill();
+  }
+
+  /* ── 접지: 포트(상단)에서 내려와 가로선 3개 (점점 짧게) ─────────── */
+  function drawGround(ctx,cx,cy,r){
+    ctx.beginPath();
+    ctx.moveTo(cx,cy-r); ctx.lineTo(cx,cy+r*.05);
+    ctx.moveTo(cx-r*.55,cy+r*.05); ctx.lineTo(cx+r*.55,cy+r*.05);
+    ctx.moveTo(cx-r*.35,cy+r*.32); ctx.lineTo(cx+r*.35,cy+r*.32);
+    ctx.moveTo(cx-r*.15,cy+r*.59); ctx.lineTo(cx+r*.15,cy+r*.59);
+    ctx.stroke();
+  }
+
+  /* ── 레일 라벨: 포트(하단)에서 올라와 작은 원 — 이름은 값 라벨로 위에 표시 ── */
+  function drawRailLabel(ctx,cx,cy,r){
+    ctx.beginPath();
+    ctx.moveTo(cx,cy+r); ctx.lineTo(cx,cy-r*.25);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx,cy-r*.40,r*.15,0,Math.PI*2); ctx.stroke();
+  }
+
   var DRAWERS={};
+  DRAWERS[TYPE.SWITCH]    =function(ctx,cx,cy,r){ drawSwitch(ctx,cx,cy,r); };
+  DRAWERS[TYPE.GROUND]    =function(ctx,cx,cy,r){ drawGround(ctx,cx,cy,r); };
+  DRAWERS[TYPE.LABEL]     =function(ctx,cx,cy,r){ drawRailLabel(ctx,cx,cy,r); };
   DRAWERS[TYPE.DC_SOURCE] =function(ctx,cx,cy,r){ drawDCSource(ctx,cx,cy,r); };
   DRAWERS[TYPE.AC_SOURCE] =function(ctx,cx,cy,r){ drawACSource(ctx,cx,cy,r); };
   DRAWERS[TYPE.RESISTOR]  =function(ctx,cx,cy,r){ drawResistor(ctx,cx,cy,r); };

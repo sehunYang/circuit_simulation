@@ -19,6 +19,7 @@ App.PropPanel=(function(){
     DC_SOURCE:'직류 전원',AC_SOURCE:'교류 전원',RESISTOR:'저항',
     CAPACITOR:'축전기',INDUCTOR:'인덕터',
     JUNCTION_3:'3방향 교차',JUNCTION_4:'4방향 교차',
+    SWITCH:'스위치',GROUND:'접지',LABEL:'레일 라벨',
   };
 
   // {label, key, unit, displayScale, displayFixed, min, max, step}
@@ -157,112 +158,35 @@ App.PropPanel=(function(){
       _content.appendChild(_row('연결',connCount>0?connCount+'개 도선':'없음'));
     }
 
-    /* ── 측정값 ── */
-    var mDiv=document.createElement('div');mDiv.className='pp-measure';
+    /* ── 측정값 ──
+     *   편집 모드(스위치 열림)에서는 '열림 · 닫으면' 두 상태를 나란히 보인다.
+     *   행 생성은 _measureRows(view, comp) 하나로 통일 — 두 상태가 같은 코드를 쓴다. */
     var sr=App.State.solverResult;
-    if(sr&&sr.valid){
-      var I=sr.branchCurrents[comp.id], V=sr.componentVoltages[comp.id];
-      var isAC=!!(sr.acPhasor);
-
-      if(isAC){
-        /* ── AC(혼합 포함): 피크 · 실효값 · 임피던스 · 평균전력 ──
-         *   i(t) = I_dc + Re[I·e^{jωt}] 이므로
-         *     피크   = |I_dc| + |I|            (최대 순시값 — 솔버 표시값)
-         *     실효값 = √(I_dc² + |I|²/2)       (혼합이면 peak/√2 가 아니다)
-         *   평균전력은 역률을 포함해야 한다:
-         *     저항   P = I_rms²·R
-         *     전원   P = V_dc·I_dc + Re(V·I*)/2   (피상전력 V_rms·I_rms 와 다름) */
-        var ph=sr.acPhasor, omega=ph.omega;
-        var Iph=ph.compI[comp.id]||{re:0,im:0}, Vph=ph.compV[comp.id]||{re:0,im:0};
-        var Idc=(ph.dcCompI&&ph.dcCompI[comp.id])||0, Vdc=(ph.dcCompV&&ph.dcCompV[comp.id])||0;
-        var Iac=Math.hypot(Iph.re,Iph.im), Vac=Math.hypot(Vph.re,Vph.im);
-        var Ipk=I!=null?Math.abs(I):null;
-        var Vpk=V!=null?Math.abs(V):null;
-        var Irms=I!=null?Math.sqrt(Idc*Idc+Iac*Iac/2):null;
-        var Vrms=V!=null?Math.sqrt(Vdc*Vdc+Vac*Vac/2):null;
-        mDiv.appendChild(_row('전류(peak)',_fmtCurrent(Ipk)));
-        mDiv.appendChild(_row('전류(RMS)', _fmtCurrent(Irms)));
-        mDiv.appendChild(_row('전압(peak)',_fmtVoltage(Vpk)));
-        mDiv.appendChild(_row('전압(RMS)', _fmtVoltage(Vrms)));
-        /* 임피던스 */
-        var Z=null, Zlabel='임피던스';
-        if(comp.type===TYPE.RESISTOR){
-          Z=comp.value||0; Zlabel='R';
-        } else if(comp.type===TYPE.CAPACITOR){
-          var wC2=omega*(comp.value||0);
-          Z=wC2>1e-15?1/wC2:Infinity; Zlabel='|Z_C|=1/ωC';
-        } else if(comp.type===TYPE.INDUCTOR){
-          Z=omega*(comp.value||0); Zlabel='|Z_L|=ωL';
-        }
-        if(Z!=null&&isFinite(Z))
-          mDiv.appendChild(_row(Zlabel, Z>=1000?(Z/1000).toFixed(3)+' kΩ':Z.toFixed(3)+' Ω'));
-        if(comp.type===TYPE.RESISTOR&&Irms!=null)
-          mDiv.appendChild(_row('소비전력(평균)',_fmtPower(Irms*Irms*(comp.value||0))));
-        if(comp.type===TYPE.AC_SOURCE||comp.type===TYPE.DC_SOURCE){
-          /* 전원 평균전력 = DC 항 + AC 항(역률 포함). AC 전원의 DC 성분 전압과
-           * DC 전원의 AC 성분 전압은 0 이므로 각자 한 항만 남는다. */
-          var Pavg=Math.abs(Vdc*Idc+(Vph.re*Iph.re+Vph.im*Iph.im)/2);
-          mDiv.appendChild(_row('공급전력(평균)',_fmtPower(Pavg)));
-        }
-      } else {
-        /* ── DC ── */
-        mDiv.appendChild(_row('전류',_fmtCurrent(I)));
-        mDiv.appendChild(_row('전압강하',_fmtVoltage(V)));
-        if(comp.type===TYPE.RESISTOR&&I!=null&&V!=null)
-          mDiv.appendChild(_row('소비전력',_fmtPower(Math.abs(V*I))));
-        if((comp.type===TYPE.DC_SOURCE||comp.type===TYPE.AC_SOURCE)&&V!=null&&I!=null)
-          mDiv.appendChild(_row('공급전력',_fmtPower(Math.abs(V*I))));
-
-        /* ── 커패시터: 충전량 Q = C·V ── */
-        if(comp.type===TYPE.CAPACITOR){
-          var Vcap=V!=null?Math.abs(V):0;
-          var Ccap=comp.value||0;
-          var Q=Ccap*Vcap;  /* 쿨롱 */
-          var Qstr=_fmtSI(Q,'C');
-          mDiv.appendChild(_row('충전량 Q=CV', Qstr));
-          mDiv.appendChild(_row('+극판 전하', '+'+Qstr));
-          mDiv.appendChild(_row('−극판 전하', '−'+Qstr));
-          mDiv.appendChild(_row('상태',_makeBadge('DC 개방 (정상상태)','#1a4030')));
-
-          /* 병렬 연결된 다른 커패시터 합산 */
-          var nn=sr.componentNodes?sr.componentNodes[comp.id]:null;
-          if(nn){
-            var parallelComps=App.State.components.filter(function(c2){
-              if(c2.id===comp.id||c2.type!==TYPE.CAPACITOR) return false;
-              var nn2=sr.componentNodes[c2.id];
-              if(!nn2) return false;
-              return (nn2[0]===nn[0]&&nn2[1]===nn[1])||(nn2[0]===nn[1]&&nn2[1]===nn[0]);
-            });
-            if(parallelComps.length>0){
-              var Qtotal=Q;
-              parallelComps.forEach(function(c2){
-                var V2=sr.componentVoltages[c2.id]||0;
-                Qtotal+=(c2.value||0)*Math.abs(V2);
-              });
-              mDiv.appendChild(_row('병렬 총 충전량', _fmtSI(Qtotal,'C')));
-              /* 전하 보존 검증: +극판 합 = -극판 합 (크기 동일) → 표시 */
-              mDiv.appendChild(_row('전하 보존',_makeBadge('ΣQ+ = ΣQ−  ✓','#1a3a4a')));
-            }
-          }
-        }
-
-        /* ── 인덕터: 자기장 Φ = L·I, 자기에너지 E = ½LI² ── */
-        if(comp.type===TYPE.INDUCTOR){
-          var Lval=comp.value||0;
-          var Iind=I!=null?Math.abs(I):0;
-          var phi=Lval*Iind;             /* 자속 Φ = L·I (Wb=V·s) */
-          var Emag=0.5*Lval*Iind*Iind;   /* 자기에너지 (J) */
-          mDiv.appendChild(_row('자속 Φ=LI', _fmtSI(phi,'Wb')));
-          mDiv.appendChild(_row('자기에너지 ½LI²', _fmtSI(Emag,'J')));
-          mDiv.appendChild(_row('상태',_makeBadge('DC 단락 (정상상태)','#1a2a50')));
-        }
-      }
+    var mDiv=document.createElement('div');mDiv.className='pp-measure';
+    var twoState=!!(sr&&sr.hasSwitches&&App.State.mode==='edit'&&sr.open&&sr.closed&&sr.open!==sr.closed);
+    if(twoState){
+      var head=document.createElement('div');head.className='pp-row';
+      var hk=document.createElement('span');hk.className='pp-key';hk.textContent='';
+      var hv=document.createElement('span');hv.className='pp-val';
+      hv.style.cssText='display:flex;gap:8px;color:var(--text-label);font-size:9px';
+      var h1=document.createElement('span');h1.textContent='열림(지금)';h1.style.flex='1';h1.style.textAlign='right';
+      var h2=document.createElement('span');h2.textContent='닫으면';h2.style.flex='1';h2.style.textAlign='right';
+      hv.appendChild(h1);hv.appendChild(h2);head.appendChild(hk);head.appendChild(hv);mDiv.appendChild(head);
+      var rowsO=sr.open.valid?_measureRows(sr.open,comp):[], rowsC=sr.closed.valid?_measureRows(sr.closed,comp):[];
+      var keys=[];
+      rowsC.forEach(function(r){keys.push(r.key);});
+      rowsO.forEach(function(r){if(keys.indexOf(r.key)<0)keys.push(r.key);});
+      keys.forEach(function(k){
+        var o=null,c=null;
+        rowsO.forEach(function(r){if(r.key===k)o=r;}); rowsC.forEach(function(r){if(r.key===k)c=r;});
+        mDiv.appendChild(_row2(k, o?o.val:'—', c?c.val:'—'));
+      });
+      if(sr.closed.error) mDiv.appendChild(_errDiv('닫으면: '+sr.closed.error));
+    } else if(sr&&sr.valid){
+      _measureRows(sr,comp).forEach(function(r){ mDiv.appendChild(_row(r.key,r.val)); });
+      if(sr.warnings&&sr.warnings.length) mDiv.appendChild(_warnDiv(sr.warnings[0]));
     } else if(sr&&sr.error){
-      var errDiv=document.createElement('div');
-      errDiv.style.cssText='background:var(--danger-bg);border:1px solid var(--danger-border);'+
-        'border-radius:5px;padding:6px 8px;margin-top:2px;color:var(--danger-text);font-size:10px;line-height:1.5';
-      errDiv.textContent='⚠ '+sr.error;
-      mDiv.appendChild(errDiv);
+      mDiv.appendChild(_errDiv(sr.error));
     } else {
       var hint=document.createElement('div');
       hint.style.cssText='color:var(--text-dim);font-size:10px;text-align:center;padding:3px 0';
@@ -282,7 +206,8 @@ App.PropPanel=(function(){
     }
     btns.appendChild(_btn('✕ 삭제','pp-btn-delete',function(){
       var id=App.State.selectedId;if(!id) return;
-      App.State.removeComponent(id);App.EditRenderer.stopSelAnimation();hide();
+      if(!App.State.removeComponent(id)){showErrorToast('전원에 딸린 스위치는 전원과 함께 삭제됩니다',1800);return;}
+      App.EditRenderer.stopSelAnimation();hide();
     }));
     _content.appendChild(btns);
   }
@@ -344,6 +269,148 @@ App.PropPanel=(function(){
       App.State.removeWire(wire.id);App.EditRenderer.stopSelAnimation();hide();
     });
     del.style.width='100%';btns.appendChild(del);_content.appendChild(btns);
+  }
+
+  /* ── 측정값 행 목록 [{key, val}] — 뷰(view) 하나에 대해 ──
+   *   view: 솔버 뷰(sr, sr.open, sr.closed 모두 같은 모양) */
+  function _measureRows(sr, comp){
+    var rows=[];
+    function push(key,val){ rows.push({key:key,val:val}); }
+    var cn=sr.componentNodes||{};
+    /* 연결점 소자: 전위만 */
+    if(comp.type===TYPE.GROUND||comp.type===TYPE.LABEL){
+      var nd=cn[comp.id]?cn[comp.id][0]:null;
+      push('전위', nd!=null?_fmtVoltage(sr.nodeVoltages[nd]||0):'—');
+      return rows;
+    }
+    if(comp.type===TYPE.JUNCTION_3||comp.type===TYPE.JUNCTION_4) return rows;
+    var I=sr.branchCurrents[comp.id], V=sr.componentVoltages[comp.id];
+    var isAC=!!(sr.acPhasor);
+    if(comp.type===TYPE.SWITCH){
+      var closedSw=sr.switchState==='closed';
+      push('상태', _makeBadge(closedSw?'닫힘':'열림', ''));
+      push('전류', _fmtCurrent(I));
+      push('양단 전압', _fmtVoltage(V));
+      return rows;
+    }
+      if(isAC){
+        /* ── AC(혼합 포함): 피크 · 실효값 · 임피던스 · 평균전력 ──
+         *   i(t) = I_dc + Re[I·e^{jωt}] 이므로
+         *     피크   = |I_dc| + |I|            (최대 순시값 — 솔버 표시값)
+         *     실효값 = √(I_dc² + |I|²/2)       (혼합이면 peak/√2 가 아니다)
+         *   평균전력은 역률을 포함해야 한다:
+         *     저항   P = I_rms²·R
+         *     전원   P = V_dc·I_dc + Re(V·I*)/2   (피상전력 V_rms·I_rms 와 다름) */
+        var ph=sr.acPhasor, omega=ph.omega;
+        var Iph=ph.compI[comp.id]||{re:0,im:0}, Vph=ph.compV[comp.id]||{re:0,im:0};
+        var Idc=(ph.dcCompI&&ph.dcCompI[comp.id])||0, Vdc=(ph.dcCompV&&ph.dcCompV[comp.id])||0;
+        var Iac=Math.hypot(Iph.re,Iph.im), Vac=Math.hypot(Vph.re,Vph.im);
+        var Ipk=I!=null?Math.abs(I):null;
+        var Vpk=V!=null?Math.abs(V):null;
+        var Irms=I!=null?Math.sqrt(Idc*Idc+Iac*Iac/2):null;
+        var Vrms=V!=null?Math.sqrt(Vdc*Vdc+Vac*Vac/2):null;
+        push('전류(peak)',_fmtCurrent(Ipk));
+        push('전류(RMS)', _fmtCurrent(Irms));
+        push('전압(peak)',_fmtVoltage(Vpk));
+        push('전압(RMS)', _fmtVoltage(Vrms));
+        /* 임피던스 */
+        var Z=null, Zlabel='임피던스';
+        if(comp.type===TYPE.RESISTOR){
+          Z=comp.value||0; Zlabel='R';
+        } else if(comp.type===TYPE.CAPACITOR){
+          var wC2=omega*(comp.value||0);
+          Z=wC2>1e-15?1/wC2:Infinity; Zlabel='|Z_C|=1/ωC';
+        } else if(comp.type===TYPE.INDUCTOR){
+          Z=omega*(comp.value||0); Zlabel='|Z_L|=ωL';
+        }
+        if(Z!=null&&isFinite(Z))
+          push(Zlabel, Z>=1000?(Z/1000).toFixed(3)+' kΩ':Z.toFixed(3)+' Ω');
+        if(comp.type===TYPE.RESISTOR&&Irms!=null)
+          push('소비전력(평균)',_fmtPower(Irms*Irms*(comp.value||0)));
+        if(comp.type===TYPE.AC_SOURCE||comp.type===TYPE.DC_SOURCE){
+          /* 전원 평균전력 = DC 항 + AC 항(역률 포함). AC 전원의 DC 성분 전압과
+           * DC 전원의 AC 성분 전압은 0 이므로 각자 한 항만 남는다. */
+          var Pavg=Math.abs(Vdc*Idc+(Vph.re*Iph.re+Vph.im*Iph.im)/2);
+          push('공급전력(평균)',_fmtPower(Pavg));
+        }
+      } else {
+        /* ── DC ── */
+        push('전류',_fmtCurrent(I));
+        push('전압강하',_fmtVoltage(V));
+        if(comp.type===TYPE.RESISTOR&&I!=null&&V!=null)
+          push('소비전력',_fmtPower(Math.abs(V*I)));
+        if((comp.type===TYPE.DC_SOURCE||comp.type===TYPE.AC_SOURCE)&&V!=null&&I!=null)
+          push('공급전력',_fmtPower(Math.abs(V*I)));
+
+        /* ── 커패시터: 충전량 Q = C·V ── */
+        if(comp.type===TYPE.CAPACITOR){
+          var Vcap=V!=null?Math.abs(V):0;
+          var Ccap=comp.value||0;
+          var Q=Ccap*Vcap;  /* 쿨롱 */
+          var Qstr=_fmtSI(Q,'C');
+          push('충전량 Q=CV', Qstr);
+          push('+극판 전하', '+'+Qstr);
+          push('−극판 전하', '−'+Qstr);
+          push('상태',_makeBadge('DC 개방 (정상상태)','#1a4030'));
+
+          /* 병렬 연결된 다른 커패시터 합산 */
+          var nn=sr.componentNodes?sr.componentNodes[comp.id]:null;
+          if(nn){
+            var parallelComps=App.State.components.filter(function(c2){
+              if(c2.id===comp.id||c2.type!==TYPE.CAPACITOR) return false;
+              var nn2=sr.componentNodes[c2.id];
+              if(!nn2) return false;
+              return (nn2[0]===nn[0]&&nn2[1]===nn[1])||(nn2[0]===nn[1]&&nn2[1]===nn[0]);
+            });
+            if(parallelComps.length>0){
+              var Qtotal=Q;
+              parallelComps.forEach(function(c2){
+                var V2=sr.componentVoltages[c2.id]||0;
+                Qtotal+=(c2.value||0)*Math.abs(V2);
+              });
+              push('병렬 총 충전량', _fmtSI(Qtotal,'C'));
+              /* 전하 보존 검증: +극판 합 = -극판 합 (크기 동일) → 표시 */
+              push('전하 보존',_makeBadge('ΣQ+ = ΣQ−  ✓','#1a3a4a'));
+            }
+          }
+        }
+
+        /* ── 인덕터: 자기장 Φ = L·I, 자기에너지 E = ½LI² ── */
+        if(comp.type===TYPE.INDUCTOR){
+          var Lval=comp.value||0;
+          var Iind=I!=null?Math.abs(I):0;
+          var phi=Lval*Iind;             /* 자속 Φ = L·I (Wb=V·s) */
+          var Emag=0.5*Lval*Iind*Iind;   /* 자기에너지 (J) */
+          push('자속 Φ=LI', _fmtSI(phi,'Wb'));
+          push('자기에너지 ½LI²', _fmtSI(Emag,'J'));
+          push('상태',_makeBadge('DC 단락 (정상상태)','#1a2a50'));
+        }
+      }
+    return rows;
+  }
+  /* 두 값(열림 · 닫으면) 행 */
+  function _row2(key,a,b){
+    var row=document.createElement('div');row.className='pp-row';
+    var k=document.createElement('span');k.className='pp-key';k.textContent=key;
+    var v=document.createElement('span');v.className='pp-val';v.style.cssText='display:flex;gap:8px';
+    [a,b].forEach(function(val){
+      var sp=document.createElement('span');sp.style.cssText='flex:1;text-align:right';
+      if(val instanceof Node) sp.appendChild(val); else sp.textContent=val;
+      v.appendChild(sp);
+    });
+    row.appendChild(k);row.appendChild(v);return row;
+  }
+  function _errDiv(msg){
+    var d=document.createElement('div');
+    d.style.cssText='background:var(--danger-bg);border:1px solid var(--danger-border);'+
+      'border-radius:5px;padding:6px 8px;margin-top:2px;color:var(--danger-text);font-size:10px;line-height:1.5';
+    d.textContent='⚠ '+msg; return d;
+  }
+  function _warnDiv(msg){
+    var d=document.createElement('div');
+    d.style.cssText='background:#fff7e6;border:1px solid #f0d9a8;border-radius:5px;padding:5px 8px;'+
+      'margin-top:4px;color:#8a5a00;font-size:10px;line-height:1.4';
+    d.textContent='ⓘ '+msg; return d;
   }
 
   /* 키-값 행 생성.
