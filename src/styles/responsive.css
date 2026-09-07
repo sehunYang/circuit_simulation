@@ -39,10 +39,18 @@
   }
   #hamburger-btn span { display: block; width: 20px; height: 2px; background: var(--text-accent); border-radius: 1px; transition: all 0.2s; }
 
-  /* 하단 바: undo-bar(맨 아래) / mode-bar(그 위) 수직 분리 */
-  #undo-bar { position: absolute; left: 8px; right: auto; bottom: 8px; gap: 4px; }
-  #mode-bar { bottom: 58px; }
-  .mode-btn { padding: 6px 12px; font-size: 11px; }
+  /* 하단 바: mode-bar(맨 아래 가운데) / undo-bar(그 위 두 줄) — 서로 겹치지 않게 높이를 벌린다.
+   *   (예전에는 undo-bar 가 폭 300px 로 두 줄이 되면서 그 위의 mode-bar 를 침범했다) */
+  #mode-bar { bottom: 10px; left: 50%; padding: 4px 6px; gap: 2px; max-width: calc(100% - 16px); }
+  .mode-btn { padding: 6px 10px; font-size: 11px; white-space: nowrap; }
+  #undo-bar {
+    position: absolute; left: 8px; right: 8px; bottom: 62px; width: auto;
+    gap: 4px; row-gap: 6px; justify-content: flex-start;
+  }
+  /* 시작 카드·도움말·상태 알림 */
+  #start-guide { top: 40%; padding: 14px 16px 12px; }
+  #help-panel { right: 8px; left: 8px; width: auto; top: 8px; max-height: 78dvh; }
+  #status-chip { top: 8px; font-size: 11px; }
 
   /* 속성 패널: 하단 슬라이드업 시트 */
   #prop-panel {

@@ -66,6 +66,9 @@ App.Main=(function(){
         var cur=grp?grp.options[grp.current]:item;
         App.Symbols.drawMini(cv,cur.type,cur.pair?{pair:true}:null);
         lbl.textContent=grp?(grp.current===0?grp.label:cur.label):item.label;
+        /* 툴팁: 기호만으로는 무엇인지 알 수 없다 */
+        var d=cur.pair?'변압기 — 결합된 인덕터 두 개(상호유도). 2차 회로는 도선으로 잇지 않아도 됩니다':(SIDEBAR_DESC[cur.type]||cur.label);
+        div.title=d+(grp?'  ·  눌러서 종류 고르기':'');
       }
       _refresh();
       div.appendChild(cv);div.appendChild(lbl);
@@ -129,6 +132,7 @@ App.Main=(function(){
     document.querySelectorAll('.mode-btn').forEach(function(b){
       b.classList.toggle('active', b.dataset.mode===mode);
     });
+    App.Events.emit('mode:changed', mode);
   }
 
   /* 비유 모드 진입/이탈 시 UI 가시성 토글 (#6)
@@ -428,11 +432,9 @@ App.Main=(function(){
       }
     },{passive:true});
 
-    /* ── 6. mode-bar / undo-bar 수직 분리 (CSS와 일치) ── */
-    var modeBarEl=document.getElementById('mode-bar');
-    var undoBarEl=document.getElementById('undo-bar');
-    if(modeBarEl) modeBarEl.style.bottom='58px';
-    if(undoBarEl) undoBarEl.style.bottom='8px';
+    /* ── 6. mode-bar / undo-bar 수직 분리 ──
+     *   위치는 responsive.css 가 정한다 (모드 바가 맨 아래, 두 줄짜리 undo 바가 그 위).
+     *   예전에는 여기서 인라인 style 로 덮어써 CSS 를 고쳐도 두 바가 겹친 채였다. */
 
     /* ── 7. 가시 토글 버튼 터치 동기화 ──
      * click 리스너만으론 모바일에서 active 클래스가 안 맞는 문제 보정 */
@@ -484,6 +486,9 @@ App.Main=(function(){
 
     _setupVisBtns();
     if(App.POE) App.POE.init();
+    if(App.Guide) App.Guide.init();
+    var gb=document.getElementById('graph-btn');
+    if(gb) gb.addEventListener('click',function(){ App.Guide.toggleGraph(); });
 
     /* 공유 링크(#c=…)로 열렸으면 그 회로를 복원 */
     if(App.Share&&App.Share.applyFromHash()) showErrorToast('공유된 회로를 불러왔습니다',1800);

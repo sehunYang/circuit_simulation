@@ -62,6 +62,24 @@ var UNDO_MAX          = 30;    // Undo 최대 단계
  *   shortUnit: 사이드바·라벨 표시 단위 */
 /* group: 같은 group 의 항목은 사이드바 버튼 하나로 묶인다 — 클릭하면 고르고,
  *        드래그하면 마지막에 고른 종류를 배치한다 (R: 저항/전구, SEMI: 다이오드/npn/pnp) */
+/* 팔레트 툴팁 (처음 보는 학생이 기호만으로는 무엇인지 알 수 없다) */
+var SIDEBAR_DESC = {
+  DC_SOURCE:'전지 (직류 전원) — 전위를 올려 주는 펌프. 놓으면 스위치가 함께 생깁니다',
+  AC_SOURCE:'교류 전원 — 전압이 사인파로 바뀝니다 (전압·주파수를 정할 수 있습니다)',
+  RESISTOR :'저항 — 전류를 방해합니다 (V = IR)',
+  BULB     :'전구 — 저항이면서 밝기(소비전력 P = I²R)를 보여 줍니다',
+  CAPACITOR:'축전기 — 전하를 모읍니다. 직류 정상상태에서는 전류가 흐르지 않습니다',
+  INDUCTOR :'인덕터(코일) — 전류의 변화를 막습니다. 두 개를 결합하면 변압기가 됩니다',
+  DIODE    :'다이오드 — 한쪽 방향으로만 전류를 흘립니다 (정류)',
+  NPN      :'npn 트랜지스터 — 작은 베이스 전류로 큰 컬렉터 전류를 켭니다',
+  PNP      :'pnp 트랜지스터 — npn 과 극성이 반대입니다',
+  JUNCTION_3:'분기점(3방향) — 도선이 갈라지는 점',
+  JUNCTION_4:'분기점(4방향) — 도선이 갈라지는 점',
+  SWITCH   :'스위치 — 실행 모드에서 클릭해 열고 닫습니다',
+  GROUND   :'접지(GND) — 전위의 기준점(0 V)',
+  LABEL    :'전원 레일(VCC) — 같은 이름끼리 이어집니다. 전위를 주면 그 자체가 전원',
+};
+
 var SIDEBAR_ITEMS = [
   { type:TYPE.DC_SOURCE,  label:'DC',  defValue:12,      defValue2:null, shortUnit:'V'  },
   { type:TYPE.AC_SOURCE,  label:'AC',  defValue:220,     defValue2:60,   shortUnit:'V~' },

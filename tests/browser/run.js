@@ -625,6 +625,84 @@ async function inkCount(p,sel,pred){ return p.evaluate((sel,predSrc)=>{const cv=
   }
   await p.evaluate(()=>{ const S=window.App.State; while(S.components.length) S.removeComponent(S.components[0].id); });
 
+  /* ══ H 단계: 안내 계층 (시작 카드 · 상태 알림 · 도움말 · 그래프 재열기 · POE 자기점검 · 모바일 바) ══ */
+  /* 1. 빈 캔버스에서 시작 카드, 소자를 놓으면 사라진다 */
+  const g1=await p.evaluate(()=>{ const S=window.App.State; while(S.components.length) S.removeComponent(S.components[0].id);
+    window.App.Solver.solveNow(); window.App.Guide.refresh();
+    const empty=!!document.querySelector('#start-guide.visible');
+    document.getElementById('sg-demo').click();
+    const sr=S.solverResult;
+    return {empty, afterDemo:!!document.querySelector('#start-guide.visible'), n:S.components.length, wires:S.wires.length,
+            valid:sr.valid, warn:(sr.warnings||[]).length, chip:!!document.querySelector('#status-chip.visible')}; });
+  chk('시작 카드: 빈 캔버스에 보이고 예제 회로를 만들면 사라진다', g1.empty&&!g1.afterDemo, JSON.stringify(g1));
+  chk('예제 회로: 전지+스위치+전구 한 바퀴 · 오류·경고 없음', g1.n===3&&g1.wires===3&&g1.valid&&g1.warn===0&&!g1.chip, JSON.stringify(g1));
+
+  /* 2. 상태 알림: 도선을 끊으면 경고 + 고치는 법, 단락이면 오류 + 고치는 법 */
+  const g2=await p.evaluate(()=>{ const S=window.App.State; const bulb=S.components.find(c=>c.type==='BULB');
+    S.wires.filter(w=>w.fromId===bulb.id||w.toId===bulb.id).forEach(w=>S.removeWire(w.id));
+    window.App.Solver.solveNow(); window.App.Guide.refresh();
+    const c=document.getElementById('status-chip');
+    const warn={vis:c.classList.contains('visible'), warn:c.classList.contains('warn'), hint:!!c.querySelector('.chip-hint')};
+    while(S.components.length) S.removeComponent(S.components[0].id);
+    const a=S.genId(), r=S.genId();
+    S.addComponent({id:a,type:'DC_SOURCE',gridX:48,gridY:48,rotation:0,value:12,value2:null,label:'',rint:0});
+    S.addComponent({id:r,type:'RESISTOR',gridX:50,gridY:48,rotation:0,value:0,value2:null,label:''});
+    S.addWire({id:S.genId(),fromId:a,fromPort:'R',toId:r,toPort:'L',direction:'H-first'});
+    S.addWire({id:S.genId(),fromId:r,fromPort:'R',toId:a,toPort:'L',direction:'V-first'});
+    window.App.Solver.solveNow(); window.App.Guide.refresh();
+    const err={vis:c.classList.contains('visible'), err:c.classList.contains('err'), text:c.textContent};
+    return {warn, err}; });
+  chk('상태 알림: 끊긴 회로 → 경고 + 고치는 법', g2.warn.vis&&g2.warn.warn&&g2.warn.hint, JSON.stringify(g2.warn));
+  chk('상태 알림: 단락 → 오류 + "저항이나 전구를 넣으세요"', g2.err.vis&&g2.err.err&&/저항이나 전구/.test(g2.err.text), JSON.stringify({vis:g2.err.vis,err:g2.err.err}));
+
+  /* 3. 도움말 · 팔레트 툴팁 */
+  const g3=await p.evaluate(()=>{ document.getElementById('help-btn').click();
+    const open=!!document.querySelector('#help-panel.visible'), len=document.getElementById('help-panel').textContent.length;
+    document.getElementById('help-close-btn').click();
+    const closed=!document.querySelector('#help-panel.visible');
+    const tips=[...document.querySelectorAll('.sidebar-item')].filter(e=>(e.title||'').length>10).length;
+    const modes=[...document.querySelectorAll('.mode-btn')].filter(e=>(e.title||'').length>10).length;
+    return {open, closed, len, tips, modes}; });
+  chk('도움말: ? 버튼으로 열고 닫힌다 (단축키·모드 안내 포함)', g3.open&&g3.closed&&g3.len>700, JSON.stringify(g3));
+  chk('툴팁: 팔레트 소자 10개 이상·모드 버튼 4개에 설명', g3.tips>=10&&g3.modes===4, JSON.stringify(g3));
+
+  /* 4. 그래프를 닫아도 📈 로 다시 열 수 있다 */
+  await p.evaluate(()=>{ const P=window.App.POE; P.loadCircuit(P.EXAMPLES.find(e=>e.id==='capcharge')); P.close(); });
+  await L.mode(p,'run'); await L.sleep(600);
+  const g4=await p.evaluate(()=>{ document.getElementById('tp-close-btn').click();
+    const closed=!document.querySelector('#transient-panel.visible');
+    document.getElementById('graph-btn').click();
+    return {closed, reopened:!!document.querySelector('#transient-panel.visible')}; });
+  chk('그래프: 닫은 뒤 📈 버튼으로 다시 열린다', g4.closed&&g4.reopened, JSON.stringify(g4));
+  await L.mode(p,'edit');
+
+  /* 5. POE 자기 점검: 정답 표시 · 다시 풀기 · 진행 요약 */
+  const g5=await p.evaluate(()=>{ const P=window.App.POE; P.open(); const ex=P.EXAMPLES[0]; P.start(ex);
+    const ci=ex.options.findIndex(o=>o.correct);
+    [...document.querySelectorAll('#poe-body .poe-opt')].find(b=>b.textContent!==ex.options[ci].label).click();
+    [...document.querySelectorAll('#poe-body .poe-primary')].find(b=>/관찰/.test(b.textContent)).click();
+    [...document.querySelectorAll('#poe-body .poe-primary')].find(b=>/설명/.test(b.textContent)).click();
+    const ans=(document.querySelector('.poe-answer')||{}).textContent||'';
+    const yours=(document.querySelector('.poe-yours')||{}).textContent||'';
+    const btns=[...document.querySelectorAll('#poe-body .poe-btn')].map(b=>b.textContent);
+    [...document.querySelectorAll('#poe-body .poe-btn')].find(b=>/목록으로/.test(b.textContent)).click();
+    const prog=(document.querySelector('.poe-progress')||{}).textContent||'';
+    P.close();
+    return {ans, yours, btns, prog, correctLabel:ex.options[ci].label}; });
+  chk('POE 설명: 정답을 문장으로 보여 주고 내가 고른 답과 나란히', g5.ans.indexOf(g5.correctLabel)>=0&&/내가 고른 답/.test(g5.yours), JSON.stringify({a:g5.ans,y:g5.yours}));
+  chk('POE 설명: 다시 풀기·다음 예제 버튼', g5.btns.some(t=>/다시 풀기/.test(t))&&g5.btns.some(t=>/다음 예제/.test(t)), JSON.stringify(g5.btns));
+  chk('POE 목록: 진행 요약(전체·풀이·정답 수)', /전체 \d+개 중 \d+개 풀이 · \d+개 정답/.test(g5.prog), g5.prog);
+
+  /* 6. 모바일: 모드 바와 툴바가 겹치지 않는다 */
+  const mp=await L.newPage(b,390,780,2,true);
+  await L.sleep(500);
+  const g6=await mp.evaluate(()=>{ const m=document.getElementById('mode-bar').getBoundingClientRect(), u=document.getElementById('undo-bar').getBoundingClientRect();
+    const btn=document.querySelector('.mode-btn').getBoundingClientRect();
+    return {overlap:!(m.bottom<=u.top||u.bottom<=m.top), btnH:Math.round(btn.height), guide:!!document.querySelector('#start-guide.visible')}; });
+  chk('모바일: 모드 바와 툴바가 겹치지 않고 버튼 글자가 한 줄', !g6.overlap&&g6.btnH<40, JSON.stringify(g6));
+  chk('모바일: 시작 카드가 보인다', g6.guide, JSON.stringify(g6));
+  await mp.close();
+
   await b.close();
   let fail=0; R.forEach(x=>{ if(!x.ok) fail++; console.log((x.ok?'✓ ':'✗ ')+x.name+(x.ok?'':'   '+x.detail)); });
   console.log('─'.repeat(50)); console.log('검증 '+R.length+'건 / 실패 '+fail+'건'); process.exit(fail?1:0);

@@ -59,18 +59,18 @@
          링크 순서 = 캐스케이드 순서. responsive 는 항상 마지막이어야
          @media 오버라이드가 올바르게 적용된다.
        ════════════════════════════════════════════════════════════════ -->
-  <link rel="stylesheet" href="src/styles/tokens.css?v=20260907c">                            <!-- 디자인 토큰 (CSS Custom Properties) -->
-  <link rel="stylesheet" href="src/styles/base.css?v=20260907c">                              <!-- 리셋 & 기본 레이아웃 -->
-  <link rel="stylesheet" href="src/styles/sidebar.css?v=20260907c">                           <!-- 사이드바 (소자 팔레트) -->
-  <link rel="stylesheet" href="src/styles/canvas.css?v=20260907c">                            <!-- 캔버스 레이어 · 드래그 고스트 · 삭제 존 -->
-  <link rel="stylesheet" href="src/styles/mode-bar.css?v=20260907c">                          <!-- 모드 바 (편집/실행/비유/촬영) -->
-  <link rel="stylesheet" href="src/styles/toolbar.css?v=20260907c">                           <!-- Undo/Redo · 표시 토글 바 -->
-  <link rel="stylesheet" href="src/styles/prop-panel.css?v=20260907c">                        <!-- 속성 패널 -->
-  <link rel="stylesheet" href="src/styles/transient-panel.css?v=20260907c">                   <!-- 과도 응답 그래프 패널 -->
-  <link rel="stylesheet" href="src/styles/val-popup.css?v=20260907c">                         <!-- 값 입력 팝업 -->
-  <link rel="stylesheet" href="src/styles/context-menu.css?v=20260907c">                      <!-- 컨텍스트 메뉴 (우클릭) -->
-  <link rel="stylesheet" href="src/styles/overlays.css?v=20260907c">                          <!-- 토스트 · 연결 힌트 · 정보 오버레이 -->
-  <link rel="stylesheet" href="src/styles/responsive.css?v=20260907c">                        <!-- 반응형 (모바일 ≤480px / 데스크톱 ≥481px) -->
+  <link rel="stylesheet" href="src/styles/tokens.css?v=20260907e">                            <!-- 디자인 토큰 (CSS Custom Properties) -->
+  <link rel="stylesheet" href="src/styles/base.css?v=20260907e">                              <!-- 리셋 & 기본 레이아웃 -->
+  <link rel="stylesheet" href="src/styles/sidebar.css?v=20260907e">                           <!-- 사이드바 (소자 팔레트) -->
+  <link rel="stylesheet" href="src/styles/canvas.css?v=20260907e">                            <!-- 캔버스 레이어 · 드래그 고스트 · 삭제 존 -->
+  <link rel="stylesheet" href="src/styles/mode-bar.css?v=20260907e">                          <!-- 모드 바 (편집/실행/비유/촬영) -->
+  <link rel="stylesheet" href="src/styles/toolbar.css?v=20260907e">                           <!-- Undo/Redo · 표시 토글 바 -->
+  <link rel="stylesheet" href="src/styles/prop-panel.css?v=20260907e">                        <!-- 속성 패널 -->
+  <link rel="stylesheet" href="src/styles/transient-panel.css?v=20260907e">                   <!-- 과도 응답 그래프 패널 -->
+  <link rel="stylesheet" href="src/styles/val-popup.css?v=20260907e">                         <!-- 값 입력 팝업 -->
+  <link rel="stylesheet" href="src/styles/context-menu.css?v=20260907e">                      <!-- 컨텍스트 메뉴 (우클릭) -->
+  <link rel="stylesheet" href="src/styles/overlays.css?v=20260907e">                          <!-- 토스트 · 연결 힌트 · 정보 오버레이 -->
+  <link rel="stylesheet" href="src/styles/responsive.css?v=20260907e">                        <!-- 반응형 (모바일 ≤480px / 데스크톱 ≥481px) -->
 </head>
 <body>
 
@@ -106,10 +106,10 @@
 
   <!-- 모드 전환 바 -->
   <div id="mode-bar">
-    <button class="mode-btn active" data-mode="edit">편집</button>
-    <button class="mode-btn"        data-mode="run">실행</button>
-    <button class="mode-btn"        data-mode="analogy">비유</button>
-    <button class="mode-btn"        data-mode="capture">📷촬영</button>
+    <button class="mode-btn active" data-mode="edit"    title="편집 — 소자를 놓고 값을 바꿉니다 (전원에 딸린 스위치는 열림)">편집</button>
+    <button class="mode-btn"        data-mode="run"     title="실행 — 스위치가 닫히고(t=0) 전자가 흐릅니다. 그래프·파형이 함께 열립니다">실행</button>
+    <button class="mode-btn"        data-mode="analogy" title="비유 — 회로를 물의 수로로 바꿔 3D 로 봅니다 (직류 전용)">비유</button>
+    <button class="mode-btn"        data-mode="capture" title="촬영 — 시험지에 붙일 수 있는 선화 PNG 로 내보냅니다">📷촬영</button>
   </div>
 
   <!-- Undo/Redo + 표시 토글 바 -->
@@ -127,12 +127,31 @@
     <div id="vis-sep3"></div>
     <button class="vis-btn" id="share-btn" title="공유 링크 복사 — 이 회로를 링크로 저장·배포">🔗</button>
     <button class="vis-btn" id="poe-btn" title="예측·관찰·설명 (POE) — 오개념 진단 활동">POE</button>
+    <button class="vis-btn" id="graph-btn" title="그래프·파형 패널 열기/닫기 (실행 모드)">📈</button>
+    <button class="vis-btn" id="help-btn" title="도움말 — 사용법·모드·단축키">?</button>
   </div>
 
   <!-- 속성 패널 (소자 선택 시) — 내용은 JS(PropPanel)가 채움 -->
   <div id="prop-panel">
     <div class="pp-title">속성</div>
     <div id="prop-content"></div>
+  </div>
+
+  <!-- 회로 상태 알림 (오류·경고가 있을 때만) -->
+  <div id="status-chip"></div>
+
+  <!-- 시작 안내 (캔버스가 비었을 때만) -->
+  <div id="start-guide">
+    <span class="sg-x" id="sg-close" title="닫기">✕</span>
+    <div class="sg-title">전기회로 시뮬레이터</div>
+    <div class="sg-lead">왼쪽 팔레트에서 소자를 <b>끌어다 놓고</b>, 포트(●)를 끌어 도선으로 이으세요.
+      포트끼리 맞닿게 놓으면 저절로 이어집니다. 소자를 클릭하면 전류·전압이 바로 나옵니다.</div>
+    <div class="sg-btns">
+      <button class="sg-btn primary" id="sg-demo">예제 회로 만들기</button>
+      <button class="sg-btn" id="sg-poe">POE 활동 열기</button>
+      <button class="sg-btn" id="sg-help">도움말</button>
+    </div>
+    <div class="sg-foot">아래 <b>편집 · 실행 · 비유 · 촬영</b> 으로 모드를 바꿉니다.</div>
   </div>
 
   <!-- 연결 힌트 -->
@@ -163,6 +182,57 @@
   <canvas id="scope-canvas" width="352" height="170"></canvas>
   <div id="scope-toggles"></div>   <!-- 소자별 켜기/끄기 · v(t)/i(t) -->
   <div id="scope-legend"></div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     도움말 패널 — 모드·표시 토글·단축키·팔레트 한 장
+     ════════════════════════════════════════════════════════════════ -->
+<div id="help-panel">
+  <div class="tp-title"><span>도움말</span><span class="tp-close" id="help-close-btn">✕</span></div>
+  <div class="hp-body">
+    <div class="hp-h">1. 회로 만들기</div>
+    <ul>
+      <li>왼쪽 팔레트에서 소자를 <b>끌어다 놓습니다</b>. <b>R · 반도체 · L</b> 은 눌러서 종류를 고릅니다.</li>
+      <li>포트(●)를 눌러 끌면 도선이 생깁니다. 포트끼리 <b>맞닿게 놓으면 저절로</b> 이어집니다.</li>
+      <li>소자를 클릭하면 오른쪽에 값과 측정값이 나옵니다. 값을 누르면 바꿀 수 있습니다.</li>
+      <li>전원을 놓으면 <b>스위치가 함께</b> 생깁니다 — 편집에서는 열림, 실행에서는 닫힘(t = 0)입니다.</li>
+    </ul>
+    <div class="hp-h">2. 네 가지 모드</div>
+    <table class="hp-t">
+      <tr><td>편집</td><td>소자를 놓고 값을 바꿉니다. 전위 지형(V)·전하(Q)도 여기서 봅니다.</td></tr>
+      <tr><td>실행</td><td>전자가 흐릅니다. 축전기·코일이 있으면 과도 응답 그래프, 교류·반도체면 오실로스코프가 열립니다.</td></tr>
+      <tr><td>비유</td><td>회로를 물의 수로로 바꿔 3D 로 봅니다 (직류 전용 — 높이 = 전위, 유속 = 전류).</td></tr>
+      <tr><td>촬영</td><td>시험지에 그대로 붙일 수 있는 선화 PNG 로 내보냅니다.</td></tr>
+    </table>
+    <div class="hp-h">3. 표시 토글 (왼쪽 아래)</div>
+    <table class="hp-t">
+      <tr><td>▶</td><td>전류 방향 화살표</td></tr>
+      <tr><td>A</td><td>전류 세기 배지</td></tr>
+      <tr><td>Ω</td><td>소자 값 라벨</td></tr>
+      <tr><td>⏚</td><td>회로이론 표기 — 접지·전원 레일(VCC)로 그리기</td></tr>
+      <tr><td>V</td><td>전위 지형 — 도선을 전위로 색칠</td></tr>
+      <tr><td>Q</td><td>전하 카운터 — 도선을 지나간 전하량</td></tr>
+      <tr><td>🔗</td><td>공유 링크 복사</td></tr>
+      <tr><td>POE</td><td>예측·관찰·설명 활동 (오개념 진단)</td></tr>
+      <tr><td>📈</td><td>그래프·파형 패널 열기/닫기</td></tr>
+    </table>
+    <div class="hp-h">4. 단축키와 조작</div>
+    <table class="hp-t">
+      <tr><td>Delete</td><td>선택한 소자·도선 삭제</td></tr>
+      <tr><td>R</td><td>선택한 소자 회전</td></tr>
+      <tr><td>Ctrl + Z / Y</td><td>실행 취소 / 다시 실행</td></tr>
+      <tr><td>Esc</td><td>선택·연결 취소</td></tr>
+      <tr><td>휠 / 두 손가락</td><td>확대·축소</td></tr>
+      <tr><td>빈 곳 드래그</td><td>화면 이동</td></tr>
+      <tr><td>오른쪽 클릭 · 길게 누르기</td><td>회전·복제·삭제 메뉴</td></tr>
+    </table>
+    <div class="hp-h">5. 막혔을 때</div>
+    <ul>
+      <li>실행했는데 아무 일도 없다면 화면 위쪽 <b>알림</b>을 보세요 — 무엇이 잘못됐는지와 고치는 방법이 나옵니다.</li>
+      <li>전구가 안 켜지면 회로가 <b>한 바퀴 닫혀</b> 있는지, 스위치가 닫혔는지 확인하세요.</li>
+      <li>무엇을 해 볼지 모르겠다면 <b>POE</b> 의 예제 28개 중 하나를 골라 보세요.</li>
+    </ul>
+  </div>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════
@@ -212,45 +282,46 @@
        · 각 파일은 IIFE 로 감싸져 전역을 오염시키지 않는다.
          (core/constants.js 만 의도적으로 전역 상수를 노출)
      ════════════════════════════════════════════════════════════════ -->
-<script src="src/js/core/constants.js?v=20260907c"></script>                   <!-- 상수 · 소자 정의 테이블 -->
-<script src="src/js/core/namespace.js?v=20260907c"></script>                   <!-- 전역 App 네임스페이스 -->
-<script src="src/js/core/events.js?v=20260907c"></script>                      <!-- 이벤트 버스 -->
-<script src="src/js/core/state.js?v=20260907c"></script>                       <!-- 상태 저장소 + Undo/Redo -->
-<script src="src/js/core/share.js?v=20260907c"></script>                       <!-- 회로 저장·공유 (URL 해시) -->
-<script src="src/js/geometry/geo.js?v=20260907c"></script>                     <!-- 좌표 변환 · 포트 · 도선 경로 -->
-<script src="src/js/render/svg-shapes.js?v=20260907c"></script>                <!-- 수능 지면 규격 토큰 + Canvas→SVG 기록기 -->
-<script src="src/js/render/symbols.js?v=20260907c"></script>                   <!-- 소자 심볼 드로잉 -->
+<script src="src/js/core/constants.js?v=20260907e"></script>                   <!-- 상수 · 소자 정의 테이블 -->
+<script src="src/js/core/namespace.js?v=20260907e"></script>                   <!-- 전역 App 네임스페이스 -->
+<script src="src/js/core/events.js?v=20260907e"></script>                      <!-- 이벤트 버스 -->
+<script src="src/js/core/state.js?v=20260907e"></script>                       <!-- 상태 저장소 + Undo/Redo -->
+<script src="src/js/core/share.js?v=20260907e"></script>                       <!-- 회로 저장·공유 (URL 해시) -->
+<script src="src/js/geometry/geo.js?v=20260907e"></script>                     <!-- 좌표 변환 · 포트 · 도선 경로 -->
+<script src="src/js/render/svg-shapes.js?v=20260907e"></script>                <!-- 수능 지면 규격 토큰 + Canvas→SVG 기록기 -->
+<script src="src/js/render/symbols.js?v=20260907e"></script>                   <!-- 소자 심볼 드로잉 -->
 <!-- 회로 해석 엔진 (src/js/circuit/) — 순서: 회로망 → 행렬 코어 → 소자 → 해석 → 후처리 → 오케스트레이터 -->
-<script src="src/js/circuit/netlist.js?v=20260907c"></script>                  <!-- 그림 → 회로망 (노드 병합·스위치·접지·라벨·섬) -->
-<script src="src/js/circuit/mna.js?v=20260907c"></script>                      <!-- MNA 행렬 코어 (실수·복소 가우스 소거) -->
-<script src="src/js/circuit/devices/index.js?v=20260907c"></script>            <!-- 소자 레지스트리 -->
-<script src="src/js/circuit/devices/resistor.js?v=20260907c"></script>
-<script src="src/js/circuit/devices/capacitor.js?v=20260907c"></script>
-<script src="src/js/circuit/devices/inductor.js?v=20260907c"></script>
-<script src="src/js/circuit/devices/vsource.js?v=20260907c"></script>
-<script src="src/js/circuit/devices/bulb.js?v=20260907c"></script>
-<script src="src/js/circuit/devices/diode.js?v=20260907c"></script>              <!-- Shockley (비선형, NR) -->
-<script src="src/js/circuit/devices/bjt.js?v=20260907c"></script>                <!-- Ebers-Moll npn/pnp -->
-<script src="src/js/circuit/analysis/op.js?v=20260907c"></script>              <!-- 동작점 (Newton-Raphson) -->
-<script src="src/js/circuit/analysis/ac.js?v=20260907c"></script>              <!-- 소신호 페이저 -->
-<script src="src/js/circuit/analysis/tran.js?v=20260907c"></script>            <!-- 시간 영역 (사다리꼴 + NR/스텝) -->
-<script src="src/js/circuit/analysis/poles.js?v=20260907c"></script>           <!-- 선형 회로 극점 (정확한 τ·α·ω_d) -->
-<script src="src/js/circuit/post/wires.js?v=20260907c"></script>               <!-- 도선 전류 KCL 필링 -->
-<script src="src/js/circuit/post/result.js?v=20260907c"></script>              <!-- 뷰 조립 · 표시 규약 -->
-<script src="src/js/circuit/solver.js?v=20260907c"></script>                   <!-- 오케스트레이터 -->
-<script src="src/js/render/grid-renderer.js?v=20260907c"></script>             <!-- 격자 배경 렌더러 -->
-<script src="src/js/render/edit-renderer.js?v=20260907c"></script>             <!-- 편집 모드 렌더러 -->
-<script src="src/js/render/run-renderer.js?v=20260907c"></script>              <!-- 실행 모드 전자 애니메이션 -->
-<script src="src/js/render/analogy-renderer.js?v=20260907c"></script>          <!-- 수로 비유 모드 (Three.js) -->
-<script src="src/js/render/capture.js?v=20260907c"></script>                   <!-- SVG 선화 내보내기 (촬영) -->
-<script src="src/js/ui/interaction.js?v=20260907c"></script>                   <!-- 포인터 제스처 FSM -->
-<script src="src/js/ui/transient-graph.js?v=20260907c"></script>               <!-- 과도 응답 그래프 -->
-<script src="src/js/ui/scope.js?v=20260907c"></script>                         <!-- 오실로스코프 (파형 v(t)·i(t)) -->
-<script src="src/js/ui/poe.js?v=20260907c"></script>                           <!-- 예측·관찰·설명 (POE) 활동 -->
-<script src="src/js/ui/val-popup.js?v=20260907c"></script>                     <!-- 값 입력 팝업 -->
-<script src="src/js/ui/prop-panel.js?v=20260907c"></script>                    <!-- 속성 패널 -->
-<script src="src/js/ui/toast.js?v=20260907c"></script>                         <!-- 전역 에러 토스트 -->
-<script src="src/js/main.js?v=20260907c"></script>                             <!-- 부트스트랩 & 오케스트레이션 -->
+<script src="src/js/circuit/netlist.js?v=20260907e"></script>                  <!-- 그림 → 회로망 (노드 병합·스위치·접지·라벨·섬) -->
+<script src="src/js/circuit/mna.js?v=20260907e"></script>                      <!-- MNA 행렬 코어 (실수·복소 가우스 소거) -->
+<script src="src/js/circuit/devices/index.js?v=20260907e"></script>            <!-- 소자 레지스트리 -->
+<script src="src/js/circuit/devices/resistor.js?v=20260907e"></script>
+<script src="src/js/circuit/devices/capacitor.js?v=20260907e"></script>
+<script src="src/js/circuit/devices/inductor.js?v=20260907e"></script>
+<script src="src/js/circuit/devices/vsource.js?v=20260907e"></script>
+<script src="src/js/circuit/devices/bulb.js?v=20260907e"></script>
+<script src="src/js/circuit/devices/diode.js?v=20260907e"></script>              <!-- Shockley (비선형, NR) -->
+<script src="src/js/circuit/devices/bjt.js?v=20260907e"></script>                <!-- Ebers-Moll npn/pnp -->
+<script src="src/js/circuit/analysis/op.js?v=20260907e"></script>              <!-- 동작점 (Newton-Raphson) -->
+<script src="src/js/circuit/analysis/ac.js?v=20260907e"></script>              <!-- 소신호 페이저 -->
+<script src="src/js/circuit/analysis/tran.js?v=20260907e"></script>            <!-- 시간 영역 (사다리꼴 + NR/스텝) -->
+<script src="src/js/circuit/analysis/poles.js?v=20260907e"></script>           <!-- 선형 회로 극점 (정확한 τ·α·ω_d) -->
+<script src="src/js/circuit/post/wires.js?v=20260907e"></script>               <!-- 도선 전류 KCL 필링 -->
+<script src="src/js/circuit/post/result.js?v=20260907e"></script>              <!-- 뷰 조립 · 표시 규약 -->
+<script src="src/js/circuit/solver.js?v=20260907e"></script>                   <!-- 오케스트레이터 -->
+<script src="src/js/render/grid-renderer.js?v=20260907e"></script>             <!-- 격자 배경 렌더러 -->
+<script src="src/js/render/edit-renderer.js?v=20260907e"></script>             <!-- 편집 모드 렌더러 -->
+<script src="src/js/render/run-renderer.js?v=20260907e"></script>              <!-- 실행 모드 전자 애니메이션 -->
+<script src="src/js/render/analogy-renderer.js?v=20260907e"></script>          <!-- 수로 비유 모드 (Three.js) -->
+<script src="src/js/render/capture.js?v=20260907e"></script>                   <!-- SVG 선화 내보내기 (촬영) -->
+<script src="src/js/ui/interaction.js?v=20260907e"></script>                   <!-- 포인터 제스처 FSM -->
+<script src="src/js/ui/transient-graph.js?v=20260907e"></script>               <!-- 과도 응답 그래프 -->
+<script src="src/js/ui/scope.js?v=20260907e"></script>                         <!-- 오실로스코프 (파형 v(t)·i(t)) -->
+<script src="src/js/ui/poe.js?v=20260907e"></script>                           <!-- 예측·관찰·설명 (POE) 활동 -->
+<script src="src/js/ui/guide.js?v=20260907e"></script>                          <!-- 시작 안내·상태 알림·도움말 -->
+<script src="src/js/ui/val-popup.js?v=20260907e"></script>                     <!-- 값 입력 팝업 -->
+<script src="src/js/ui/prop-panel.js?v=20260907e"></script>                    <!-- 속성 패널 -->
+<script src="src/js/ui/toast.js?v=20260907e"></script>                         <!-- 전역 에러 토스트 -->
+<script src="src/js/main.js?v=20260907e"></script>                             <!-- 부트스트랩 & 오케스트레이션 -->
 
 </body>
 </html>

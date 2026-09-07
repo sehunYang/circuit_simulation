@@ -638,9 +638,21 @@ App.POE=(function(){
       row.addEventListener('click',function(){ start(ex); });
       _body.appendChild(row);
     });
+    /* 진행 요약 — 자기 점검용: 전체 중 몇 개를 풀었고 몇 개가 맞았는지 */
+    var seen={}, okN=0;
+    _results.forEach(function(r){ seen[r.id]=r.correct; });
+    Object.keys(seen).forEach(function(k){ if(seen[k]) okN++; });
+    var doneN=Object.keys(seen).length;
+    var prog=h('div','poe-progress');
+    prog.appendChild(h('span','', '전체 '+EXAMPLES.length+'개 중 '+doneN+'개 풀이 · '+okN+'개 정답'));
+    var bar=h('div','poe-bar'); var fill=h('div','poe-bar-fill');
+    fill.style.width=(EXAMPLES.length?Math.round(doneN/EXAMPLES.length*100):0)+'%';
+    bar.appendChild(fill); prog.appendChild(bar);
+    _body.appendChild(prog);
+
     var foot=h('div','poe-foot');
     foot.appendChild(btn('결과 CSV 내보내기','', exportCSV));
-    foot.appendChild(h('span','poe-dim', _results.length?(_results.length+'건 기록'):''));
+    if(doneN) foot.appendChild(btn('기록 지우기','poe-small',function(){ _results.length=0; renderList(); }));
     _body.appendChild(foot);
   }
 
@@ -690,6 +702,13 @@ App.POE=(function(){
       var ok=isCorrect(ex);
       var verdict=h('div','poe-verdict '+(ok?'ok':'no'), ok?'예측이 맞았습니다.':'예측과 다릅니다.');
       _body.appendChild(verdict);
+      /* 정답을 분명히 — 선택지는 섞여 있으므로 "몇 번" 이 아니라 문장을 그대로 보여 준다.
+       *   (진리표 예제는 선택지가 하나뿐이라 표가 정답 역할을 한다) */
+      var ci=ex.options.findIndex(function(o){return o.correct;});
+      if(ci>=0&&ex.options.length>1){
+        _body.appendChild(h('div','poe-answer','정답: '+ex.options[ci].label));
+        if(!ok&&picked) _body.appendChild(h('div','poe-yours','내가 고른 답: '+picked.label));
+      }
       if(!ok&&picked&&picked.tag) _body.appendChild(h('div','poe-tag','고른 답에 담긴 생각: '+picked.tag));
       if(ex.truth&&ex._truthObs){
         var wrong=ex._truthObs.filter(function(r,i){ return ex._truthPred[i]!==r.out; }).length;
@@ -699,9 +718,23 @@ App.POE=(function(){
       if(ex.variants&&ex._variantObs) _body.appendChild(variantTable(ex,'result'));
       _body.appendChild(h('div','poe-explain',ex.explain));
       _body.appendChild(h('div','poe-dim','다루는 오개념: '+ex.misconception));
+      var row=h('div','poe-endbtns');
+      row.appendChild(btn('다시 풀기','poe-small',function(){ start(ex); }));
+      var nextEx=_nextExample(ex);
+      if(nextEx) row.appendChild(btn('다음 예제 →','poe-small',function(){ start(nextEx); }));
+      _body.appendChild(row);
       var nxt=btn('목록으로','poe-primary',function(){ _cur=null; renderList(); });
       _body.appendChild(nxt);
     }
+  }
+
+  /* 같은 분류에서 아직 안 푼 다음 예제 (없으면 분류의 다음 예제) */
+  function _nextExample(ex){
+    var same=EXAMPLES.filter(function(e){return e.cat===ex.cat;});
+    var i=same.indexOf(ex);
+    var done={}; _results.forEach(function(r){ done[r.id]=true; });
+    for(var k=1;k<=same.length;k++){ var c=same[(i+k)%same.length]; if(c!==ex&&!done[c.id]) return c; }
+    return same.length>1?same[(i+1)%same.length]:null;
   }
 
   function observe(ex){
@@ -795,6 +828,7 @@ App.POE=(function(){
   }
 
   function record(ex){
+    /* 같은 예제를 다시 풀면 마지막 결과로 갱신 (CSV 에는 시도 순서대로 남는다) */
     _results.push({id:ex.id, title:ex.title, pick:(ex.options[_picked]||{}).label, correct:isCorrect(ex),
                    tag:(!isCorrect(ex)&&ex.options[_picked]&&ex.options[_picked].tag)||'', at:new Date().toISOString()});
   }
