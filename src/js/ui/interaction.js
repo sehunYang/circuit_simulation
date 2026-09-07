@@ -617,7 +617,7 @@ App.Interaction=(function(){
     _sbDrag.startX=clientX;_sbDrag.startY=clientY;_sbDrag.moved=false;
     el.classList.add('dragging');
     var ghost=document.getElementById('drag-ghost');
-    App.Symbols.drawMini(ghost,item.type);
+    App.Symbols.drawMini(ghost,item.type,item.pair?{pair:true}:null);
     _moveSbGhost(clientX,clientY);
     ghost.style.display='block';
   }
@@ -800,6 +800,7 @@ App.Interaction=(function(){
     if(comp.type===TYPE.SWITCH&&comp.autoFor){showErrorToast('전원에 딸린 스위치는 복제할 수 없습니다.');return;}
     var dup=JSON.parse(JSON.stringify(comp));
     dup.id=App.State.genId();dup.gridX=empty.gridX;dup.gridY=empty.gridY;
+    delete dup.couple;   /* 상호유도 짝은 복제되지 않는다 (원본의 짝을 가로채지 않게) */
     App.State.addComponent(dup);
     App.Main.attachAutoSwitch(dup);   /* 전원이면 스위치도 함께 */
     App.State.selectedId=dup.id;

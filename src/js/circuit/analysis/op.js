@@ -66,6 +66,7 @@ App.Analysis.op=function(nl, devs, opts){
       var same=(A.nodes[0]===B.nodes[0]&&A.nodes[1]===B.nodes[1]);
       var rev =(A.nodes[0]===B.nodes[1]&&A.nodes[1]===B.nodes[0]);
       if(!same&&!rev) continue;
+      if(A.comp.rint>0||B.comp.rint>0) continue;   /* 내부저항이 있으면 전압이 달라도 해가 있다 (한쪽이 충전됨) */
       var Ea=A.emfOP(), Eb=same?B.emfOP():-B.emfOP();
       if(Math.abs(Ea-Eb)>0.5)
         return{x:null, err:'서로 다른 전압의 전원이 병렬 연결되어 있습니다 (V₁='+A.emfOP()+'V, V₂='+B.emfOP()+'V)'};
@@ -77,6 +78,7 @@ App.Analysis.op=function(nl, devs, opts){
     var sys=MNA.makeSystem(N,false);
     var ctx={mode:'op', rser:rser, zeroSources:!!opts.zeroSources};
     for(var i=0;i<devs.length;i++) devs[i].loadOP(sys, x, ctx);
+    MNA.stampPins(sys, nl);
     if(gmin>0) for(var n=0;n<nNode;n++) sys.add(n,n,gmin);
     return sys;
   }

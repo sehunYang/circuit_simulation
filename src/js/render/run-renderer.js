@@ -426,6 +426,17 @@ App.RunRenderer=(function(){
     _ctx.clearRect(0,0,vs0.w,vs0.h);
 
     if(sr&&sr.valid){
+      /* 전구 광량 — 직류 과도 파형은 순간전력 v(t)·i(t) 로 매 프레임 (스위치를 닫는 순간의 번쩍임·꺼짐).
+       *   교류·정상상태는 편집 렌더러가 평균전력/동작점으로 그린다. */
+      if(sr.wave&&!sr.acPhasor&&tPhys!=null){
+        var vt=App.State.viewTransform, cellPxB=CELL_SIZE*vt.scale;
+        App.State.components.forEach(function(c){
+          if(c.type!==TYPE.BULB) return;
+          var gp=App.Geo.gridToPixel(c.gridX,c.gridY);
+          if(gp.x+cellPxB<-5||gp.x>vs0.w+5||gp.y+cellPxB<-5||gp.y>vs0.h+5) return;
+          App.Symbols.drawGlow(_ctx, gp.x+cellPxB/2, gp.y+cellPxB/2, cellPxB, App.Post.bulbBrightness(sr,c,tPhys));
+        });
+      }
       /* 파형이 있으면 그것으로(과도·교류·정류 공통), 없으면 페이저(선형 AC) */
       if(sr.wave) _updatePoolsWave(tPhys, sr);
       else if(sr.acPhasor) _updatePoolsAC(_t, sr);

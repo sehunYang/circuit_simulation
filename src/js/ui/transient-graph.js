@@ -1207,11 +1207,14 @@ App.TransientGraph=(function(){
    *   쓰는 branchModel 을 위해서만 남아 있다 (D 단계에서 제거). */
   function _applyEngineWave(){
     var sr=App.State.solverResult;
-    var view=(sr&&sr.closed)?sr.closed:sr;
+    var view=(sr&&sr.closed&&!App.State.openTransient)?sr.closed:sr;
     if(!view||!view.wave) return;
     var w=view.wave;
     _tMax=w.tMax;
-    Object.keys(_history).forEach(function(id){
+    /* 자체 적분이 곡선을 못 만든 소자(전원과 도선으로 이어지지 않은 변압기 2차 코일 등)도 엔진 파형이 있으면 그린다 */
+    var ids=Object.keys(_history);
+    App.State.components.forEach(function(c){ if((c.type===TYPE.CAPACITOR||c.type===TYPE.INDUCTOR)&&ids.indexOf(c.id)<0&&w.elem[c.id]) ids.push(c.id); });
+    ids.forEach(function(id){
       var src=w.elem[id]; if(!src) return;
       /* 표시 방향: 최대 진폭 지점이 + 가 되게 (2차 경로와 같은 규약) */
       var arr=Float32Array.from(src.i), mag=0, ref=0;

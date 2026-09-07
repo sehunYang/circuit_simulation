@@ -32,6 +32,11 @@
 #poe-panel .tp-title { font-size: 12px; color: var(--text-accent); font-weight: 700; letter-spacing: 1px;
   border-bottom: 1px solid var(--border-dim); padding-bottom: 7px; margin-bottom: 10px; display: flex; justify-content: space-between; }
 .poe-intro, .poe-dim { color: var(--text-dim); font-size: 11px; margin: 4px 0 8px; }
+.poe-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 8px; }
+.poe-tab { font-family: var(--font); font-size: 10px; padding: 2px 8px; border: 1px solid var(--border-dim); border-radius: 10px;
+  background: #fff; color: var(--text-dim); cursor: pointer; }
+.poe-tab:hover { border-color: var(--border-active); }
+.poe-tab.on { border-color: var(--border-active); color: var(--text-accent); font-weight: 700; background: var(--sel-bg); }
 .poe-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
 .poe-item:hover { background: var(--btn-h); border-color: var(--border-active); }
 .poe-lv { font-size: 9px; color: var(--text-accent); border: 1px solid var(--border-active); border-radius: 3px; padding: 0 5px; white-space: nowrap; }
@@ -58,5 +63,7 @@
 table.poe-truth { border-collapse: collapse; margin: 6px 0 10px; font-size: 12px; }
 table.poe-truth th, table.poe-truth td { border: 1px solid var(--border-base); padding: 3px 10px; text-align: center; }
 table.poe-truth th { background: var(--bg-sidebar); color: var(--text-label); font-weight: 600; font-size: 10.5px; }
+table.poe-truth tr.click { cursor: pointer; } table.poe-truth tr.click:hover td { background: var(--btn-h); }
+table.poe-truth tr.on td { background: var(--sel-bg); font-weight: 700; }
 table.poe-truth td.click { cursor: pointer; background: var(--sel-bg); font-weight: 700; }
 table.poe-truth td.ok { background: #e6f4ec; } table.poe-truth td.no { background: var(--danger-bg); color: var(--danger-text); font-weight: 700; }

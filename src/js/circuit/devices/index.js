@@ -78,8 +78,14 @@ App.Devices=(function(){
     return f(comp, nn, nl);
   }
   function createAll(nl){
-    var devs=[];
-    nl.comps.forEach(function(c){ var d=create(c,nl); if(d) devs.push(d); });
+    var devs=[], byId={};
+    nl.comps.forEach(function(c){ var d=create(c,nl); if(d){ devs.push(d); byId[d.id]=d; } });
+    /* 상호유도 짝: 인덕터 소자에 partner 와 M = k·√(L1·L2) 을 달아 준다 (스탬프는 inductor.js) */
+    (nl.couples||[]).forEach(function(cp){
+      var a=byId[cp.a], b=byId[cp.b]; if(!a||!b) return;
+      var L1=a.comp.value>0?a.comp.value:1e-12, L2=b.comp.value>0?b.comp.value:1e-12;
+      a.partner=b; b.partner=a; a.M=b.M=cp.k*Math.sqrt(L1*L2);
+    });
     return devs;
   }
 

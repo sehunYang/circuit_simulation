@@ -68,7 +68,9 @@ var SIDEBAR_ITEMS = [
   { type:TYPE.RESISTOR,   label:'R',   defValue:100,     defValue2:null, shortUnit:'Ω',  group:'R',    groupLabel:'R' },
   { type:TYPE.BULB,       label:'전구', defValue:100,     defValue2:1,    shortUnit:'Ω',  group:'R' },   /* value2 = 정격 전력(W) */
   { type:TYPE.CAPACITOR,  label:'C',   defValue:100e-6,  defValue2:null, shortUnit:'µF' },
-  { type:TYPE.INDUCTOR,   label:'L',   defValue:10e-3,   defValue2:null, shortUnit:'mH' },
+  { type:TYPE.INDUCTOR,   label:'L',   defValue:10e-3,   defValue2:null, shortUnit:'mH', group:'L', groupLabel:'L', sepAfter:true },
+  /* 변압기 = 결합 인덕터 두 개를 나란히 배치 (pair). value2 = 결합 계수 k. 놓인 뒤에는 인덕터 둘로 다룬다 */
+  { type:TYPE.INDUCTOR,   label:'변압기', defValue:1,     defValue2:0.99, shortUnit:'H', group:'L', pair:true },
   { type:TYPE.DIODE,      label:'다이오드', defValue:0,   defValue2:null, shortUnit:'',   group:'SEMI', groupLabel:'반도체' },
   { type:TYPE.NPN,        label:'npn', defValue:100,     defValue2:null, shortUnit:'',   group:'SEMI' },   /* value = β */
   { type:TYPE.PNP,        label:'pnp', defValue:100,     defValue2:null, shortUnit:'',   group:'SEMI' },

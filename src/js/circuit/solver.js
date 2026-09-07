@@ -15,6 +15,8 @@ var App=window.App;
  *   }
  *   opts.closed : 최상위 뷰를 어느 상태로 할지 (기본 true — 테스트·정적 회로)
  *   앱에서는 run()/solveNow() 가 편집 모드 = 열림, 실행·비유 모드 = 닫힘으로 고른다.
+ *   opts.openTransient : 스위치를 "여는" 과도 — 열림 뷰의 파형을 닫힌 정상상태(인덕터 전류·
+ *     축전기 전압)에서 출발해 만든다 (App.State.openTransient 로 실행 모드가 열림 뷰를 재생).
  *
  *   오류 계약 (valid=false, error=문자열):
  *     '전원이 없습니다' · '단락 회로가 감지되었습니다'
@@ -31,10 +33,19 @@ App.Solver=(function(){
            branchCurrents:{},wireCurrents:{},wireSignedI:{},componentNodes:{},acPhasor:null};
   }
 
-  /* 한 상태(열림/닫힘)의 해석 */
-  function analyze(comps, wires, closed, opts){
+  /* 한 상태(열림/닫힘)의 해석. fromView 가 있으면 그 뷰의 정상상태를 t=0⁺ 초기 상태로 삼는다 */
+  function analyze(comps, wires, closed, opts, fromView){
     opts=opts||{};
-    var nl=App.Netlist.build(comps, wires, {closed:closed});
+    var initState=null, energized=null;
+    if(fromView&&fromView.valid&&fromView.dc&&fromView.dc.out){
+      initState={}; energized={};
+      comps.forEach(function(c){
+        var o=fromView.dc.out[c.id]; if(!o) return;
+        if(c.type===TYPE.INDUCTOR&&Math.abs(o.i)>1e-12){ initState[c.id]={i:o.i}; energized[c.id]=true; }
+        if(c.type===TYPE.CAPACITOR&&Math.abs(o.v)>1e-9){ initState[c.id]={v:o.v}; energized[c.id]=true; }
+      });
+    }
+    var nl=App.Netlist.build(comps, wires, {closed:closed, energized:energized});
     if(!nl.valid) return App.Post.fail(nl.error||'토폴로지 오류');
     try{
       var omega=0;
@@ -64,7 +75,7 @@ App.Solver=(function(){
        *   동적 소자(L/C)가 있거나, 비선형 소자와 교류가 함께 있으면(정류) 파형을 만든다.
        *   구간 T: 선형이면 극점에서 (5·τ_max, 진동이면 ≥ 3 주기), 교류는 ≥ 4 주기,
        *   비선형 DC 는 R·C, L/R 의 조합으로 어림. */
-      if(closed && !opts.noWave){
+      if((closed||initState) && !opts.noWave){
         var dynamic=devs.some(function(d){return d.dynamic;});
         var nonlinear=devs.some(function(d){return !d.linear;});
         var poles=dynamic?App.Analysis.poles(nl, devs):null;
@@ -97,8 +108,8 @@ App.Solver=(function(){
           }
           if(nl.hasAC&&omega>0) steps=Math.max(steps, Math.round(200*T*omega/(2*Math.PI)));
           steps=Math.min(steps, 8000);
-          var tr=App.Analysis.tran(nl, devs, {tMax:T, steps:steps});
-          if(!tr.err) view.wave=App.Post.buildWave(nl, devs, tr);
+          var tr=App.Analysis.tran(nl, devs, {tMax:T, steps:steps, initState:initState});
+          if(!tr.err){ view.wave=App.Post.buildWave(nl, devs, tr); if(initState) view.openTransient=true; }
           else view.warnings.push('파형 계산 실패: '+tr.err);
         }
       }
@@ -116,7 +127,7 @@ App.Solver=(function(){
     var hasSwitches=comps.some(function(c){return c.type===TYPE.SWITCH&&c.on==null;});
     var closedView=analyze(comps, wires, true, opts);
     closedView.switchState='closed';
-    var openView=hasSwitches?analyze(comps, wires, false, opts):closedView;
+    var openView=hasSwitches?analyze(comps, wires, false, opts, opts.openTransient?closedView:null):closedView;
     if(hasSwitches) openView.switchState='open';
     var top=wantClosed?closedView:openView;
     /* 뷰를 복사하지 않고 메타를 덧붙인다 (open/closed 가 같은 객체여도 무해) */
@@ -131,15 +142,17 @@ App.Solver=(function(){
   }
   function solveNow(){
     /* 편집 모드에서는 파형을 만들지 않는다 (그래프·실행·비유가 없으니 쓸 데가 없고,
-     *   드래그 중 재해석이 잦다). 실행·비유 모드 진입 시 solveNow 가 다시 불린다. */
-    var closed=_closedForMode();
+     *   드래그 중 재해석이 잦다). 실행·비유 모드 진입 시 solveNow 가 다시 불린다.
+     *   App.State.openTransient: 실행 모드가 "스위치를 여는 순간" 이 된다 — 열림 뷰를 닫힌 정상상태에서 출발한 파형과 함께 */
+    var ot=!!(App.State.openTransient&&App.State.mode!=='edit');
+    var closed=_closedForMode()&&!ot;
     /* 예외: 비선형 + 교류(정류)는 패널 표시값이 파형에서만 나오므로 편집 모드에도 만든다 */
     var comps=App.State.components;
     var nlAC=comps.some(function(c){return NONLINEAR_TYPES[c.type];}) && comps.some(function(c){return c.type===TYPE.AC_SOURCE;});
     /* 전후 비교용: 직전 결과를 잠시 보관 (배지가 '이전 → 지금' 을 몇 초간 보여 준다) */
     var prev=App.State.solverResult;
     if(prev&&prev.valid){ App.State.prevSolverResult=prev; App.State.prevSolverAt=Date.now(); }
-    App.State.solverResult=solve(comps, App.State.wires, {closed:closed, noWave:!closed&&!nlAC});
+    App.State.solverResult=solve(comps, App.State.wires, {closed:closed, noWave:!closed&&!nlAC&&!ot, openTransient:ot});
     App.Events.emit('solver:done');
     return App.State.solverResult;
   }

@@ -12,6 +12,8 @@ App.Analysis=App.Analysis||{};
  *   나머지를 0 으로 둔 해석을 상태 수만큼 돌려 상태행렬 A 를 얻는다
  *   (축전기 = 전압원 v_C, 인덕터 = 전류원 i_L 로 스탬프).
  *   A 의 고유값 = 극점. 특성다항식(Faddeev–LeVerrier) → Durand–Kerner 근.
+ *   상호유도가 있으면 인덕터 상태식은 [L]·di/dt = v (L 행렬: 대각 L, 짝끼리 M) —
+ *   [L] 을 풀어 di/dt 를 얻는다.
  *
  *   반환 null(상태 없음·비선형) 또는
  *   { poles:[{re,im}], taus:[τ…](실근), alpha, omegaD, isOsc, domTau, order }
@@ -39,6 +41,7 @@ App.Analysis.poles=function(nl, devs){
         sys.rhs(k, state[j]);
       });
       inds.forEach(function(l,j){ sys.stampI(l.i0,l.i1, state[caps.length+j]); });
+      MNA.stampPins(sys, nl);
       if(gmin>0) for(var q=0;q<nNode;q++) sys.add(q,q,gmin);
       return MNA.solve(sys);
     }
@@ -46,7 +49,17 @@ App.Analysis.poles=function(nl, devs){
     if(!x) return null;
     var out=new Array(n);
     caps.forEach(function(c,j){ var C=c.comp.value>0?c.comp.value:1e-12; out[j]=x[N0+j]/C; });
-    inds.forEach(function(l,j){ var L=l.comp.value>0?l.comp.value:1e-12; out[caps.length+j]=(D.V(x,l.i0)-D.V(x,l.i1))/L; });
+    var vL=inds.map(function(l){ return D.V(x,l.i0)-D.V(x,l.i1); });
+    if(inds.some(function(l){return !!l.partner;})){
+      /* [L]·di/dt = v_L */
+      var m=inds.length, Lm=[]; for(var a=0;a<m;a++) Lm.push(new Float64Array(m));
+      inds.forEach(function(l,j){ Lm[j][j]=l.comp.value>0?l.comp.value:1e-12;
+        if(l.partner){ var pj=inds.indexOf(l.partner); if(pj>=0) Lm[j][pj]=l.M; } });
+      var di=MNA.solveReal(Lm, Float64Array.from(vL)); if(!di) return null;
+      inds.forEach(function(l,j){ out[caps.length+j]=di[j]; });
+    } else {
+      inds.forEach(function(l,j){ var L=l.comp.value>0?l.comp.value:1e-12; out[caps.length+j]=vL[j]/L; });
+    }
     return out;
   }
 

@@ -212,6 +212,62 @@ App.PropPanel=(function(){
       _content.appendChild(lhint);
     }
 
+    /* ── 인덕터 상호유도 (결합) ──
+     *   comp.couple = 짝 id (서로 가리켜야 유효), value2 = 결합 계수 k (둘이 같은 값).
+     *   옆 칸(상하좌우)의 결합 안 된 인덕터와 묶을 수 있다. */
+    if(comp.type===TYPE.INDUCTOR){
+      var allC=App.State.components, partner=App.Netlist.coupledPartner(comp, allC);
+      var cpRow=document.createElement('div');cpRow.className='pp-row';
+      var cpKey=document.createElement('span');cpKey.className='pp-key';cpKey.textContent='상호유도';
+      var cpVal=document.createElement('span');cpVal.className='pp-val';cpVal.style.cssText='display:flex;gap:4px;justify-content:flex-end;align-items:center';
+      if(partner){
+        var pTxt=document.createElement('span'); pTxt.style.cssText='font-size:10px;color:var(--text-dim)';
+        pTxt.textContent='짝: '+((partner.label&&partner.label.trim())||'인덕터 '+_fmtSI(partner.value||0,'H'));
+        cpVal.appendChild(pTxt);
+        var offBtn=_btn('해제','pp-btn-rotate',function(){
+          delete comp.couple; delete partner.couple;
+          App.Events.emit('state:changed'); App.Solver.solveNow(); show(comp.id);
+        });
+        offBtn.style.cssText='flex:0 0 auto;padding:2px 8px'; cpVal.appendChild(offBtn);
+      } else {
+        var nb=_adjacentInductor(comp);
+        var onBtn=_btn(nb?'옆 인덕터와 결합':'결합할 인덕터 없음','pp-btn-rotate',function(){
+          if(!nb) return;
+          comp.couple=nb.id; nb.couple=comp.id;
+          if(!(comp.value2>0)) comp.value2=0.99; nb.value2=comp.value2;
+          App.Events.emit('state:changed'); App.Solver.solveNow(); show(comp.id);
+        });
+        onBtn.style.cssText='flex:0 0 auto;padding:2px 8px'+(nb?'':';opacity:.5');
+        cpVal.appendChild(onBtn);
+      }
+      cpRow.appendChild(cpKey);cpRow.appendChild(cpVal);_content.appendChild(cpRow);
+      var cHint=document.createElement('div');
+      cHint.style.cssText='color:var(--text-dim);font-size:9px;text-align:right;margin:-4px 0 6px';
+      if(partner){
+        var kRow=document.createElement('div');kRow.className='pp-row';
+        var kKey=document.createElement('span');kKey.className='pp-key';kKey.textContent='결합 계수 k';
+        var kBtn=document.createElement('button');kBtn.className='pp-input';
+        kBtn.style.cssText='cursor:pointer;text-align:right;width:90px;padding:3px 8px;'+
+          'font-size:12px;font-family:var(--font);font-weight:700;color:var(--text-base);'+
+          'background:#ffffff;border:1px solid var(--border-base);border-radius:6px;';
+        var _refreshK=function(){ kBtn.textContent=App.Netlist.coupleK(comp).toFixed(3); };
+        _refreshK();
+        kBtn.addEventListener('click',function(e){
+          e.stopPropagation();
+          App.ValPopup.open({ title:'결합 계수 k (0 ~ 1)', value:App.Netlist.coupleK(comp), step:0.01, min:0.01, max:1, anchorEl:kBtn,
+            onConfirm:function(v){ var kk=Math.max(0.01,Math.min(1,v)); comp.value2=kk; partner.value2=kk; _refreshK(); App.Events.emit('state:changed'); refresh(); } });
+        });
+        kBtn.addEventListener('pointerdown',function(e){e.stopPropagation();});
+        kRow.appendChild(kKey);kRow.appendChild(kBtn);_content.appendChild(kRow);
+        var Mval=App.Netlist.coupleK(comp)*Math.sqrt((comp.value||0)*(partner.value||0));
+        _content.appendChild(_row('M = k√(L₁L₂)', _fmtSI(Mval,'H')));
+        cHint.textContent='짝의 전류가 변할 때만 기전력 M·di/dt 가 생깁니다 · 점 = 같은 극성 끝';
+      } else {
+        cHint.textContent=nb?'옆 칸의 인덕터와 묶으면 변압기(상호유도)가 됩니다':'옆 칸에 인덕터를 나란히 놓고 결합하면 변압기가 됩니다';
+      }
+      _content.appendChild(cHint);
+    }
+
     /* ── 측정값 ──
      *   편집 모드(스위치 열림)에서는 '열림 · 닫으면' 두 상태를 나란히 보인다.
      *   행 생성은 _measureRows(view, comp) 하나로 통일 — 두 상태가 같은 코드를 쓴다. */
@@ -481,6 +537,20 @@ App.PropPanel=(function(){
         }
       }
     return rows;
+  }
+  /* 옆 칸(상하좌우)의 결합되지 않은 인덕터 — 상호유도 짝 후보 */
+  function _adjacentInductor(comp){
+    var comps=App.State.components, dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+    for(var i=0;i<dirs.length;i++){
+      for(var j=0;j<comps.length;j++){
+        var c=comps[j];
+        if(c.id===comp.id||c.type!==TYPE.INDUCTOR) continue;
+        if(c.gridX!==comp.gridX+dirs[i][0]||c.gridY!==comp.gridY+dirs[i][1]) continue;
+        if(App.Netlist.coupledPartner(c, comps)) continue;
+        return c;
+      }
+    }
+    return null;
   }
   /* 두 값(열림 · 닫으면) 행 */
   function _row2(key,a,b){

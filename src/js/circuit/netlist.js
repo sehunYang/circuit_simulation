@@ -22,11 +22,17 @@ var App=window.App;
  *   적고 값은 0 으로 나온다. 오류는 물리적으로 해가 없는 경우뿐이다:
  *     '전원이 없습니다' · '단락 회로가 감지되었습니다'(전원 양단 동일 노드)
  *
+ *   상호유도: 인덕터 comp.couple = 짝 인덕터 id (서로 가리켜야 유효), comp.value2 = 결합 계수 k.
+ *     couples:[{a,b,k}] 로 돌려주고, 짝을 통해 에너지를 받는 섬은 '전원 있음' 으로 본다.
+ *   기준 노드 핀(pinNodes): 접지 노드가 없는 섬(변압기 2차 등)은 절대 전위가 정해지지
+ *     않아 행렬이 특이해진다 — 섬마다 노드 하나를 접지에 묶어(1 S) 전위 0 으로 고정한다.
+ *     섬 안에 접지로 가는 다른 길이 없으므로 전류는 흐르지 않고 값은 바뀌지 않는다.
+ *
  *   반환:
  *     { valid, error, warnings:[…], nodeCount, groundNode:0,
  *       compNodes:{id:[nA,nB]}, portNode:{id:{port:n}},
  *       hasAC, hasDC, closed, passthrough:{switchId:true},   // 닫힌 스위치(노드 병합됨)
- *       islands:[{nodes:[…], hasSource}], comps, wires }
+ *       islands:[{nodes:[…], hasSource}], couples:[{a,b,k}], pinNodes:[n…], comps, wires }
  * ════════════════════════════════════════════════════════════════════ */
 App.Netlist=(function(){
 
@@ -37,7 +43,28 @@ App.Netlist=(function(){
   function fail(msg){
     return{valid:false,error:msg,warnings:[],nodeCount:0,groundNode:0,
            compNodes:{},portNode:{},hasAC:false,hasDC:false,closed:true,
-           passthrough:{},islands:[],comps:[],wires:[]};
+           passthrough:{},islands:[],couples:[],pinNodes:[],comps:[],wires:[]};
+  }
+
+  /* 유효한 결합 쌍 — 두 인덕터가 서로를 couple 로 가리킬 때만 (한쪽만 가리키면 무시) */
+  function couplesOf(comps){
+    var byId={}; comps.forEach(function(c){ byId[c.id]=c; });
+    var out=[], seen={};
+    comps.forEach(function(c){
+      if(c.type!==TYPE.INDUCTOR||!c.couple||seen[c.id]) return;
+      var p=byId[c.couple];
+      if(!p||p.type!==TYPE.INDUCTOR||p.couple!==c.id||p.id===c.id) return;
+      seen[c.id]=true; seen[p.id]=true;
+      out.push({a:c.id, b:p.id, k:coupleK(c)});
+    });
+    return out;
+  }
+  /* 결합 계수 k (0 < k ≤ 0.999) — k=1 은 인덕턴스 행렬이 특이해지므로 살짝 아래로 제한 */
+  function coupleK(c){ var k=+c.value2; if(!isFinite(k)||k<=0) k=0.99; return Math.min(k, 0.999); }
+  function coupledPartner(c, comps){
+    if(!c||c.type!==TYPE.INDUCTOR||!c.couple) return null;
+    for(var i=0;i<comps.length;i++){ var p=comps[i]; if(p.id===c.couple) return (p.type===TYPE.INDUCTOR&&p.couple===c.id)?p:null; }
+    return null;
   }
 
   function _uf(n){
@@ -170,6 +197,20 @@ App.Netlist=(function(){
       var nn=compNodes[c.id];
       islands[islandOf[nn[0]]].hasSource=true; islands[islandOf[nn[1]]].hasSource=true;
     });
+    /* 초기 에너지를 가진 소자(스위치를 여는 과도의 인덕터 전류·축전기 전압)가 있는 섬도 살아 있다 */
+    if(opts.energized) comps.forEach(function(c){ if(opts.energized[c.id]){ var nn=compNodes[c.id]; islands[islandOf[nn[0]]].hasSource=true; islands[islandOf[nn[1]]].hasSource=true; } });
+    /* 상호유도로 이어진 섬: 한쪽에 전원이 있으면 다른 쪽도 살아 있는 회로 (반복 전파) */
+    var couples=couplesOf(comps), changed=true;
+    while(changed){
+      changed=false;
+      couples.forEach(function(cp){
+        var ia=islands[islandOf[compNodes[cp.a][0]]], ib=islands[islandOf[compNodes[cp.b][0]]];
+        if(ia.hasSource!==ib.hasSource){ ia.hasSource=ib.hasSource=true; changed=true; }
+      });
+    }
+    /* 기준 노드 핀: 접지(0)가 없는 섬마다 노드 하나 */
+    var pinNodes=[];
+    islands.forEach(function(is){ if(is.nodes.indexOf(0)<0&&is.nodes.length) pinNodes.push(is.nodes[0]); });
     var warnings=[];
     /* 짝이 없는 레일 라벨 — 같은 이름이 하나뿐이면 어디에도 이어지지 않는다 */
     var labelCount={};
@@ -186,7 +227,7 @@ App.Netlist=(function(){
            nodeCount:nodeCount,groundNode:0,
            compNodes:compNodes,portNode:portNode,railSource:railSource,
            hasAC:hasAC,hasDC:hasDC,closed:closed,passthrough:passthrough,
-           islands:islands,islandOf:islandOf,comps:comps,wires:wires};
+           islands:islands,islandOf:islandOf,couples:couples,pinNodes:pinNodes,comps:comps,wires:wires};
   }
 
   /* 스위치 상태 — comp.on:
@@ -197,7 +238,8 @@ App.Netlist=(function(){
   function railVoltage(c){ var v=+c.value||0; return isFinite(v)?v:0; }
 
   return{build:build, portsOf:portsOf, isSource:isSource, isJunction:isJunction,
-         switchClosed:switchClosed, labelName:labelName, railVoltage:railVoltage};
+         switchClosed:switchClosed, labelName:labelName, railVoltage:railVoltage,
+         couplesOf:couplesOf, coupleK:coupleK, coupledPartner:coupledPartner};
 })();
 
 /* 하위 호환 — 예전 이름 */

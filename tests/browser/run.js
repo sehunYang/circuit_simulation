@@ -541,7 +541,7 @@ async function inkCount(p,sel,pred){ return p.evaluate((sel,predSrc)=>{const cv=
   chk('역방향 다이오드: 전류 ≈ 0 (pA) 이고 전자 픽셀 없음', revI<1e-9&&revPx===0, JSON.stringify({revI,revPx}));
 
   /* 2. 비유 모드에 새 소자(전구·스위치·다이오드·트랜지스터·접지·레일) — 오류 없이 그려지고 물이 보인다 */
-  for(const exId of ['not','and','transistor']){
+  for(const exId of ['not','and','transistor','mutual']){
     const errs2=[]; const onErr=e=>errs2.push(e.message); p.on('pageerror',onErr);
     await p.evaluate((exId)=>{ const P=window.App.POE; P.loadCircuit(P.EXAMPLES.find(e=>e.id===exId));
       window.App.State.components.forEach(c=>{ if(c.type==='SWITCH'&&c.on===false) c.on=true; }); window.App.Solver.solveNow(); }, exId);
@@ -563,10 +563,66 @@ async function inkCount(p,sel,pred){ return p.evaluate((sel,predSrc)=>{const cv=
     P.EXAMPLES.forEach(ex=>{ P.loadCircuit(ex); const src=S.components.find(c=>c.type==='DC_SOURCE'||c.type==='AC_SOURCE');
       const autoSw=S.components.find(c=>c.type==='SWITCH'&&c.autoFor); const rails=S.components.filter(c=>c.type==='LABEL'&&window.App.Netlist.railVoltage(c));
       const sr=window.App.Solver.solve(S.components,S.wires,{closed:true,noWave:true});
-      out.push({id:ex.id, rail:!!ex.circuit.rail, hasSrc:!!src, autoSw:!!(autoSw&&src&&autoSw.autoFor===src.id), rails:rails.length, valid:sr.valid, err:sr.error}); });
+      const gnd=S.components.some(c=>c.type==='GROUND');
+      out.push({id:ex.id, rail:!!ex.circuit.rail, hasSrc:!!src, autoSw:!!(autoSw&&src&&autoSw.autoFor===src.id), rails:rails.length, gnd, valid:sr.valid, err:sr.error}); });
     return out; });
-  poeF2.forEach(r=>{ chk('POE '+r.id+': '+(r.rail?'레일 전원(VCC 전위)·전지 없음':'전지 + 딸린 스위치')+' · 유효',
-      r.valid&&(r.rail?(!r.hasSrc&&r.rails>0):(r.hasSrc&&r.autoSw)), JSON.stringify(r)); });
+  /* 레일 표기 예제: VCC 전위 전원이나 접지가 있다 (전지·신호원이 함께 있을 수 있다) / 전지 예제: 전지 + 딸린 스위치 */
+  poeF2.forEach(r=>{ chk('POE '+r.id+': '+(r.rail?'레일 표기(VCC 전위 또는 접지)':'전지 + 딸린 스위치')+' · 유효',
+      r.valid&&(r.rail?(r.rails>0||r.gnd):(r.hasSrc&&r.autoSw)), JSON.stringify(r)); });
+
+  /* ══ G 단계: 상호유도 (결합 인덕터 = 변압기) ══ */
+  /* 1. POE 직류 변압기: 2차는 도선으로 섬이지만 경고 없이 살아 있고, 2차 전구 전류는 솟았다가 0 으로 */
+  const mi=await p.evaluate(()=>{ const P=window.App.POE, S=window.App.State, ex=P.EXAMPLES.find(e=>e.id==='mutual'); P.loadCircuit(ex);
+    const sr=window.App.Solver.solve(S.components,S.wires,{closed:true}); const e=sr.wave&&sr.wave.elem[ex._ids.out]; let pk=0;
+    if(e) for(let n=0;n<e.i.length;n++) pk=Math.max(pk,Math.abs(e.i[n]));
+    return {valid:sr.valid, warn:(sr.warnings||[]).length, couples:window.App.Netlist.couplesOf(S.components).length, pk, end:e?Math.abs(e.i[e.i.length-1]):null,
+            l1:Math.abs(sr.branchCurrents[ex._ids.L1]), l2:Math.abs(sr.branchCurrents[ex._ids.L2])}; });
+  chk('상호유도 POE(직류): 유효·경고 없음·결합 1쌍', mi.valid&&mi.warn===0&&mi.couples===1, JSON.stringify(mi));
+  chk('상호유도 POE(직류): 2차 전구 전류 펄스 > 30 mA 후 끝에서 < 1 mA, 1차 정상 120 mA, 2차 정상 0', mi.pk>0.03&&mi.end<1e-3&&Math.abs(mi.l1-0.12)<1e-4&&mi.l2<1e-9, JSON.stringify(mi));
+  await L.mode(p,'run'); await L.sleep(400);
+  const miG=await p.evaluate(()=>({toggles:[...document.querySelectorAll('.tp-toggle')].map(b=>b.textContent), visible:document.getElementById('transient-panel').classList.contains('visible')}));
+  chk('상호유도 POE(직류) 실행 모드: 과도 그래프에 1차·2차 코일 곡선 둘 다', miG.visible&&miG.toggles.length===2&&/2차/.test(miG.toggles.join(' ')), JSON.stringify(miG));
+  await L.mode(p,'edit');
+  /* 2. POE 교류 변압기 1:2: 2차 전압 ≈ 19 V (k=0.99), 전원 평균전력 = 전구 평균전력 */
+  const tr=await p.evaluate(()=>{ const P=window.App.POE, S=window.App.State, ex=P.EXAMPLES.find(e=>e.id==='transformer'); P.loadCircuit(ex);
+    const sr=window.App.Solver.solve(S.components,S.wires,{closed:true,noWave:true}); const V=sr.acPhasor&&sr.acPhasor.compV;
+    return {valid:sr.valid, v1:V?Math.hypot(V[ex._ids.L1].re,V[ex._ids.L1].im):null, vo:V?Math.hypot(V[ex._ids.out].re,V[ex._ids.out].im):null,
+            pin:Math.abs(window.App.Post.avgPower(sr,ex._ids.ac)), pout:window.App.Post.avgPower(sr,ex._ids.out)}; });
+  chk('상호유도 POE(교류 1:2): |V1| = 10 V, 2차 전구 18~20 V, 전력 보존', tr.valid&&Math.abs(tr.v1-10)<1e-3&&tr.vo>18&&tr.vo<20&&Math.abs(tr.pin-tr.pout)<1e-6*tr.pout+1e-9, JSON.stringify(tr));
+  /* 3b. 여는 과도 POE: 실행 모드가 열림 뷰(닫힌 정상상태에서 출발) — 전구 120 V 번쩍임, 그래프에 코일 곡선 */
+  const io=await p.evaluate(()=>{ const P=window.App.POE, S=window.App.State, ex=P.EXAMPLES.find(e=>e.id==='indopen'); P.open(); P.start(ex);
+    document.querySelectorAll('#poe-body .poe-opt')[0].click(); [...document.querySelectorAll('#poe-body .poe-primary')].find(b=>/관찰/.test(b.textContent)).click();
+    const sr=S.solverResult; const e=sr.wave&&sr.wave.elem[ex._ids.out]; let vmax=0; if(e) for(let n=0;n<e.v.length;n++) vmax=Math.max(vmax,Math.abs(e.v[n]));
+    return {mode:S.mode, ot:S.openTransient, sw:sr.switchState, wave:!!sr.wave, vmax, toggles:document.querySelectorAll('.tp-toggle').length}; });
+  chk('여는 과도 POE: 실행 모드 = 열림 뷰 + 파형, 전구 120 V, 그래프 곡선', io.mode==='run'&&io.ot&&io.sw==='open'&&io.wave&&Math.abs(io.vmax-120)<0.5&&io.toggles===1, JSON.stringify(io));
+  await L.mode(p,'edit');
+  /* 3c. 변형 비교 POE: 표가 60·40·20 mA 로 채워지고, 줄 클릭이 회로에 적용된다 */
+  const vo=await p.evaluate(()=>{ const P=window.App.POE, S=window.App.State, ex=P.EXAMPLES.find(e=>e.id==='superpos'); P.start(ex);
+    document.querySelectorAll('#poe-body .poe-opt')[0].click(); [...document.querySelectorAll('#poe-body .poe-primary')].find(b=>/관찰/.test(b.textContent)).click();
+    const rows=[...document.querySelectorAll('#poe-body table.poe-truth tr.click')].map(r=>r.textContent);
+    document.querySelectorAll('#poe-body table.poe-truth tr.click')[2].click();
+    return {rows, dbV:S.getComponent(ex._ids.da).value, I3:S.solverResult.branchCurrents[ex._ids.R3], ot:S.openTransient}; });
+  chk('변형 비교 POE(중첩): 표 60·40·20 mA, 줄 클릭 → 전지 A 0 V · R₃ 20 mA', /60\.0 mA/.test(vo.rows[0])&&/40\.0 mA/.test(vo.rows[1])&&/20\.0 mA/.test(vo.rows[2])&&vo.dbV===0&&Math.abs(Math.abs(vo.I3)-0.02)<1e-6&&!vo.ot, JSON.stringify(vo));
+  await p.evaluate(()=>{ window.App.POE.close(); }); await L.mode(p,'edit');
+
+  /* 3. 사이드바 '변압기' → 결합 인덕터 쌍 배치 · 공유 링크 왕복 · 한쪽 삭제 시 결합 해제 */
+  /* 변압기는 사이드바 L 그룹(인덕터/변압기) 선택 팝업에 있다 */
+  const sbL=await p.evaluate(()=>{ const S=window.App.State; while(S.components.length) S.removeComponent(S.components[0].id); window.App.POE.close&&window.App.POE.close();
+    const el=document.getElementById('sidebar-item-L'); if(!el) return null; const r=el.getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; });
+  let sbT=null;
+  if(sbL){ await p.mouse.click(sbL.x,sbL.y); await L.sleep(300);
+    sbT=await p.evaluate(()=>{ const e=[...document.querySelectorAll('.sb-pick')].find(x=>/변압기/.test(x.textContent)); if(!e) return null; const r=e.getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; }); }
+  chk('사이드바 L 그룹 팝업에 변압기 항목', !!sbT);
+  if(sbT){
+    await p.mouse.click(sbT.x,sbT.y); await L.sleep(300);
+    const pl=await p.evaluate(()=>{ const S=window.App.State, N=window.App.Netlist; const inds=S.components.filter(c=>c.type==='INDUCTOR');
+      const dec=window.App.Share.decode(window.App.Share.encode().replace(/^.*#c=/,''));
+      const out={n:S.components.length, rots:inds.map(c=>c.rotation), adjacent:inds.length===2&&Math.abs(inds[0].gridX-inds[1].gridX)===1&&inds[0].gridY===inds[1].gridY,
+                 couples:N.couplesOf(S.components).length, decCouples:N.couplesOf(dec.comps).length, panel:/상호유도/.test(document.getElementById('prop-content').textContent)};
+      S.removeComponent(inds[0].id); out.leftCouple=!!inds[1].couple; out.left=S.components.length; return out; });
+    chk('변압기 배치: 인덕터 2개 나란히(270°·90°)·서로 결합·속성 패널에 결합 항목', pl.n===2&&pl.adjacent&&pl.rots.join()==='270,90'&&pl.couples===1&&pl.panel, JSON.stringify(pl));
+    chk('변압기: 공유 링크 왕복 후에도 결합 유지 · 한쪽 삭제 시 남은 코일의 결합 해제', pl.decCouples===1&&pl.left===1&&pl.leftCouple===false, JSON.stringify(pl));
+  }
   await p.evaluate(()=>{ const S=window.App.State; while(S.components.length) S.removeComponent(S.components[0].id); });
 
   await b.close();

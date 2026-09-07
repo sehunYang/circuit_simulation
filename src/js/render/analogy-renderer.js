@@ -1018,6 +1018,38 @@ App.AnalogyRenderer=(function(){
     _dynamics.push({kind:'ind',wheel:wheel,rotor:rotor,comp:c,cur:lm,sgn:dirSign});
   }
 
+  /* ── 상호유도: 짝 플라이휠 사이의 굴대 + 마찰판 ──
+   *   나란히 놓인 두 코일의 플라이휠은 같은 축선 위에 있다. 축을 잇되 두 마찰판 사이를 띄워
+   *   "회전의 변화만 건너간다"(정상 회전은 미끄러진다)를 나타낸다. 판은 각자 바퀴와 같이 돈다. */
+  function _buildCouplings(){
+    var comps=App.State.components;
+    App.Netlist.couplesOf(comps).forEach(function(cp){
+      var da=null, db=null;
+      _dynamics.forEach(function(d){ if(d.kind!=='ind') return; if(d.comp.id===cp.a) da=d; if(d.comp.id===cp.b) db=d; });
+      if(!da||!db||!da.wheel.parent||!db.wheel.parent) return;
+      var pa=da.wheel.parent.position.clone(), pb=db.wheel.parent.position.clone();
+      var dir=pb.clone().sub(pa), len=dir.length(); if(len<1e-3) return; dir.normalize();
+      var mid=pa.clone().add(pb).multiplyScalar(0.5);
+      var q0=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+      var steel=new THREE.MeshStandardMaterial({color:COL_STEEL,roughness:0.4,metalness:0.35});
+      var plateMat=new THREE.MeshStandardMaterial({color:0x5b4636,roughness:0.9,metalness:0.05});
+      /* 굴대 두 토막 (판 사이는 비어 있다) */
+      var gap=0.22, plateT=0.09, half=len/2-gap/2-plateT;
+      [[-1,da],[1,db]].forEach(function(s){
+        var shaft=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,Math.max(0.05,half),10),steel);
+        shaft.position.copy(mid).add(dir.clone().multiplyScalar(s[0]*(gap/2+plateT+half/2)));
+        shaft.quaternion.copy(q0); _scene.add(shaft);
+        var plate=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,plateT,24),plateMat);
+        plate.position.copy(mid).add(dir.clone().multiplyScalar(s[0]*(gap/2+plateT/2)));
+        plate.quaternion.copy(q0); _scene.add(plate);
+        /* 판 위 표식 — 도는 것이 보이게 */
+        var mark=new THREE.Mesh(new THREE.BoxGeometry(0.12,plateT+0.02,0.4),steel);
+        mark.position.set(0.3,0,0); plate.add(mark);
+        _dynamics.push({kind:'couple', plate:plate, q0:q0, rotor:s[1].rotor});
+      });
+    });
+  }
+
   /* ════════ 새 소자 (전구·스위치·다이오드·트랜지스터·접지·레일) ════════
    *   같은 수로 문법을 쓴다: 높이 = 전위, 유속 = 전류.
    *     · 전구        → 물레방아 + 등불 (밝기 = 물레방아가 돌리는 발전기 출력 ∝ I²R)
@@ -1322,6 +1354,7 @@ App.AnalogyRenderer=(function(){
         _makeLabel(c, _compCenter(c));
       }
     });
+    _buildCouplings();
 
     /* 물 입자 메쉬 풀 생성 — 수면 위 물거품(포말)처럼 밝은 방울 */
     _sharedGeo=new THREE.SphereGeometry(0.15,8,8);
@@ -1481,6 +1514,9 @@ App.AnalogyRenderer=(function(){
         d.rotor.omega+=(tOmL-d.rotor.omega)*_clamp(3.0*dt,0,1);
         d.rotor.angle+=d.rotor.omega*dt;
         d.wheel.rotation.x=d.rotor.angle;
+      } else if(d.kind==='couple'){
+        /* 마찰판은 제 바퀴와 같이 돈다 */
+        d.plate.quaternion.copy(d.q0).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), d.rotor.angle));
       } else if(d.kind==='gate'){
         /* 수문: 목표 개방도로 부드럽게 (스위치 = 0/1, 트랜지스터 = 동작 영역) */
         d.cur+=(d.target-d.cur)*_clamp(4.0*dt,0,1);

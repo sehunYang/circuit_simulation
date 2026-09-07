@@ -1124,6 +1124,134 @@ async function main(){
     check('자동이면 hasSwitches=true', srA.hasSwitches===true);
   })();
 
+  /* ════════════ MI: 상호유도 (결합 인덕터) ════════════
+   *   comp.couple = 짝 id (서로 가리킴), comp.value2 = k.  M = k·√(L1·L2).
+   *   기대값은 결합 인덕터 방정식 v1 = L1 di1/dt + M di2/dt, v2 = M di1/dt + L2 di2/dt 의 닫힌형. */
+
+  /* ── MI-1: 교류 · 2차 개방(1 MΩ): |V2| = (M/L1)·V1 = k·√(L2/L1)·V1 ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('AC_SOURCE',10,60), L1=c.add('INDUCTOR',1,0.999), L2=c.add('INDUCTOR',4,0.999), R2=c.add('RESISTOR',1e6);
+    L1.couple=L2.id; L2.couple=L1.id;
+    c.wire(V,'L',L1,'L'); c.wire(L1,'R',V,'R');
+    c.wire(L2,'L',R2,'L'); c.wire(R2,'R',L2,'R');
+    var sr=await solveCircuit(sb,c);
+    scenario('MI-1 상호유도 교류: 2차 개방 전압 |V2| = k·√(L2/L1)·V1 = 19.98 V');
+    check('해석 유효', sr.valid, sr.error);
+    check('2차 섬이 "전원과 연결되지 않은 부품" 경고를 받지 않음', !sr.warnings.some(function(w){return /연결되지 않은/.test(w);}), JSON.stringify(sr.warnings));
+    if(!sr.valid) return;
+    var V1=sr.acPhasor.compV[L1.id], V2=sr.acPhasor.compV[R2.id];
+    approx('|V1| = 10 V', Math.hypot(V1.re,V1.im), 10, 1e-3);
+    approx('|V_R2| = 0.999·2·10', Math.hypot(V2.re,V2.im), 0.999*2*10, 5e-3);
+    /* 극성: 같은 방향(ports[0]→ports[1]) 으로 감은 코일 → V2 는 V1 과 동상 */
+    approx('V2 위상 = V1 위상 (동상)', Math.atan2(V2.im,V2.re), Math.atan2(V1.im,V1.re), 0, 0.02);
+  })();
+
+  /* ── MI-2: 교류 · 부하 있는 변압기 1:2 — 전압비 닫힌형, 무손실 전력 보존 ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var Lv1=10, Lv2=40, kv=0.999, Rv=1000, f=60, w=2*Math.PI*f;
+    var V=c.add('AC_SOURCE',10,f), L1=c.add('INDUCTOR',Lv1,kv), L2=c.add('INDUCTOR',Lv2,kv), R2=c.add('RESISTOR',Rv);
+    L1.couple=L2.id; L2.couple=L1.id;
+    c.wire(V,'L',L1,'L'); c.wire(L1,'R',V,'R');
+    c.wire(L2,'L',R2,'L'); c.wire(R2,'R',L2,'R');
+    var sr=await solveCircuit(sb,c);
+    scenario('MI-2 상호유도 교류 변압기 1:2 + 1 kΩ 부하: 전압비 닫힌형 · 전력 보존');
+    check('해석 유효', sr.valid, sr.error); if(!sr.valid) return;
+    var M=kv*Math.sqrt(Lv1*Lv2);
+    /* |V_R/V1| = ωMR / √((ωL1R)² + (ω²(L1L2−M²))²) */
+    var want=w*M*Rv/Math.sqrt(Math.pow(w*Lv1*Rv,2)+Math.pow(w*w*(Lv1*Lv2-M*M),2));
+    var V1=sr.acPhasor.compV[L1.id], VR=sr.acPhasor.compV[R2.id];
+    approx('|V_R2|/|V1| = '+want.toFixed(4), Math.hypot(VR.re,VR.im)/Math.hypot(V1.re,V1.im), want, 1e-4);
+    var Pin=Math.abs(sb.App.Post.avgPower(sr, V.id)), Pout=sb.App.Post.avgPower(sr, R2.id);
+    approx('전원 평균전력 = 부하 평균전력 (무손실 결합)', Pin, Pout, 1e-6);
+    approx('부하 전력 = |V_R|²/2R', Pout, Math.pow(Math.hypot(VR.re,VR.im),2)/(2*Rv), 1e-6);
+  })();
+
+  /* ── MI-3: 직류 스텝 · 2차 개방(1 MΩ): v2(t) = M·di1/dt = (M/L1)·V·e^{−t/τ}, τ = L1/R1 ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var Vv=12, R1v=100, Lv=1, kv=0.999;
+    var V=c.add('DC_SOURCE',Vv), R1=c.add('RESISTOR',R1v), L1=c.add('INDUCTOR',Lv,kv), L2=c.add('INDUCTOR',Lv,kv), R2=c.add('RESISTOR',1e6);
+    L1.couple=L2.id; L2.couple=L1.id;
+    c.wire(V,'L',R1,'L'); c.wire(R1,'R',L1,'L'); c.wire(L1,'R',V,'R');
+    c.wire(L2,'L',R2,'L'); c.wire(R2,'R',L2,'R');
+    var sr=await solveCircuit(sb,c);
+    scenario('MI-3 상호유도 직류 스텝: 2차 전압 = (M/L1)·V·e^{−t/τ} 펄스, 정상상태 0');
+    check('해석 유효', sr.valid, sr.error); if(!sr.valid) return;
+    approx('정상상태 i1 = V/R1', Math.abs(sr.branchCurrents[L1.id]), Vv/R1v, 1e-6);
+    approx('정상상태 2차 전류 0', Math.abs(sr.branchCurrents[L2.id]), 0, 0, 1e-9);
+    check('wave 존재', !!sr.wave); if(!sr.wave) return;
+    var wv=sr.wave, tau=Lv/R1v, M=kv*Lv, peak=M*Vv/Lv, maxErr=0;
+    /* t=0⁺ 표본은 제외: 2차 전류가 L2/R2 = 1 µs 의 빠른 모드로 올라오는 동안(첫 스텝 안)은 v_R2 = 0 이 맞다 */
+    for(var n=2;n<=wv.steps;n+=Math.max(1,Math.round(wv.steps/40))){
+      var t=wv.t[n], want=peak*Math.exp(-t/tau);
+      maxErr=Math.max(maxErr, Math.abs(Math.abs(wv.elem[R2.id].v[n])-want));
+    }
+    approx('v_R2(t) 최대 오차 < 1% of 봉우리', maxErr/peak, 0, 0, 0.01);
+    approx('sample(t=τ): v2 = 봉우리/e', Math.abs(wv.sample(R2.id,tau).v), peak/Math.E, 1e-2);
+    approx('sample(t=5τ): v2 ≈ 0', Math.abs(wv.sample(R2.id,5*tau).v)/peak, 0, 0, 0.01);
+    check('극점: 지배 τ = L1/R1', !!sr.poles && Math.abs(sr.poles.domTau-tau)/tau<1e-3, JSON.stringify(sr.poles&&sr.poles.taus));
+  })();
+
+  /* ── MI-4: 섬 · 기준 노드 핀 — 결합 짝은 살아 있고, 한쪽만 가리킨 결합과 분리 부품은 여전히 경고 ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('DC_SOURCE',12), R1=c.add('RESISTOR',100), L1=c.add('INDUCTOR',1,0.99), L2=c.add('INDUCTOR',1,0.99), R2=c.add('RESISTOR',100), Rx=c.add('RESISTOR',50);
+    L1.couple=L2.id;   /* 한쪽만 */
+    c.wire(V,'L',R1,'L'); c.wire(R1,'R',L1,'L'); c.wire(L1,'R',V,'R');
+    c.wire(L2,'L',R2,'L'); c.wire(R2,'R',L2,'R');
+    var sr=await solveCircuit(sb,c);
+    scenario('MI-4 섬 처리: 한쪽만 가리킨 결합은 무시(경고), 서로 가리키면 2차가 살아남·분리 부품 경고는 유지');
+    check('한쪽만 가리킴 → 2차는 분리 부품 경고', sr.valid && sr.warnings.some(function(w){return /연결되지 않은 부품이 3개/.test(w);}), JSON.stringify(sr.warnings));
+    L2.couple=L1.id;
+    var sr2=await solveCircuit(sb,c);
+    check('서로 가리킴 → 경고는 분리된 Rx 1개뿐', sr2.valid && sr2.warnings.some(function(w){return /연결되지 않은 부품이 1개/.test(w);}), JSON.stringify(sr2.warnings));
+    var nn=sr2.componentNodes[L2.id];
+    check('2차 노드 전위 유한 (기준 노드 핀)', isFinite(sr2.nodeVoltages[nn[0]])&&isFinite(sr2.nodeVoltages[nn[1]]));
+    approx('2차 노드 전위 = 0 (정상상태, 접지 없는 섬은 핀 노드 기준)', Math.abs(sr2.nodeVoltages[nn[0]])+Math.abs(sr2.nodeVoltages[nn[1]]), 0, 0, 1e-9);
+    approx('1차 전류는 결합과 무관 (DC)', Math.abs(sr2.branchCurrents[R1.id]), 0.12, 1e-6);
+  })();
+
+  /* ── DC-14: 직렬 축전기의 정상상태 분배 — 전하 보존 Q 같음, V ∝ 1/C (동작점이 떠 있는 노드를 gmin 에 맡기지 않는다) ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('DC_SOURCE',12), R=c.add('RESISTOR',100), C1=c.add('CAPACITOR',100e-6), C2=c.add('CAPACITOR',200e-6);
+    c.wire(V,'L',R,'L'); c.wire(R,'R',C1,'L'); c.wire(C1,'R',C2,'L'); c.wire(C2,'R',V,'R');
+    var sr=await solveCircuit(sb,c);
+    scenario('DC-14 직렬 축전기 100µF+200µF, 12V: V₁=8V, V₂=4V (Q 같음), 전류 0');
+    check('해석 유효', sr.valid, sr.error); if(!sr.valid) return;
+    approx('V_C1 = 8 V', Math.abs(sr.componentVoltages[C1.id]), 8, 1e-6);
+    approx('V_C2 = 4 V', Math.abs(sr.componentVoltages[C2.id]), 4, 1e-6);
+    approx('정상상태 전류 = 0 (표시 기준 1 pA 아래)', Math.abs(sr.branchCurrents[R.id]), 0, 0, 1e-12);
+    check('wave 존재', !!sr.wave); if(!sr.wave) return;
+    var e1=sr.wave.elem[C1.id], e2=sr.wave.elem[C2.id], S=sr.wave.steps;
+    approx('파형 끝 V_C1/V_C2 = 2 (전하 보존)', Math.abs(e1.v[S])/Math.abs(e2.v[S]), 2, 1e-3);
+  })();
+
+  /* ── TD-5: 스위치를 "여는" 과도 — 닫힌 정상상태(코일 1.2 A)에서 열림: 코일 전류가 전구로 흘러 v(0⁺) = I0·R, τ = L/(R_L+R) ── */
+  await (async function(){
+    var sb=makeApp(), c=circuit(sb);
+    var V=c.add('DC_SOURCE',12), SW=c.add('SWITCH',0), JA=c.add('JUNCTION_3',0), Lc=c.add('INDUCTOR',1), RL=c.add('RESISTOR',10), R=c.add('RESISTOR',100), JC=c.add('JUNCTION_3',0);
+    c.wire(V,'L',SW,'L'); c.wire(SW,'R',JA,'L'); c.wire(JA,'B',Lc,'L'); c.wire(Lc,'R',RL,'L'); c.wire(RL,'R',JC,'B');
+    c.wire(JA,'R',R,'L'); c.wire(R,'R',JC,'L'); c.wire(JC,'R',V,'R');
+    sb.App.State.components=c.comps; sb.App.State.wires=c.wires;
+    var sr=sb.App.Solver.solve(c.comps,c.wires,{closed:false, openTransient:true});
+    scenario('TD-5 여는 과도: 코일 1.2 A → 전구로, v_R(0⁺) = 120 V, i_L(t) = 1.2·e^{−t/τ}, τ = 1/110 s');
+    check('열림 뷰가 최상위이고 파형이 있다', sr.valid&&sr.switchState==='open'&&!!sr.wave&&sr.openTransient===true, JSON.stringify({valid:sr.valid,sw:sr.switchState,wave:!!sr.wave}));
+    if(!sr.wave) return;
+    check('닫힌 정상상태 코일 전류 1.2 A', Math.abs(Math.abs(sr.closed.branchCurrents[Lc.id])-1.2)<1e-6);
+    check('2차(열린) 섬에 "연결되지 않은 부품" 경고 없음', !sr.warnings.some(function(w){return /연결되지 않은/.test(w);}), JSON.stringify(sr.warnings));
+    var w=sr.wave, tau=1/110, I0=1.2, maxErr=0;
+    approx('i_L(0⁺) = 1.2 A', Math.abs(w.elem[Lc.id].i[0]), I0, 1e-6);
+    approx('v_R(0⁺) = I0·R = 120 V', Math.abs(w.elem[R.id].v[0]), 120, 1e-3);
+    for(var n=0;n<=w.steps;n+=Math.max(1,Math.round(w.steps/40))){ var t=w.t[n]; maxErr=Math.max(maxErr, Math.abs(Math.abs(w.elem[Lc.id].i[n])-I0*Math.exp(-t/tau))); }
+    approx('i_L(t) 최대 오차 < 0.5% of I0', maxErr/I0, 0, 0, 0.005);
+    approx('구간 = 5τ', w.tMax, 5*tau, 1e-6);
+    /* 닫힘 뷰(스위치 닫음)는 그대로: 파형은 t=0 닫힘 과도 */
+    check('닫힘 뷰 파형은 0 에서 출발', !!sr.closed.wave && Math.abs(sr.closed.wave.elem[Lc.id].i[0])<1e-9);
+  })();
+
   /* ════════════ 결과 출력 ════════════ */
   var totalChecks=0, totalFail=0, failScen=0;
   console.log('');

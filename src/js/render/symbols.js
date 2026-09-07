@@ -113,6 +113,34 @@ App.Symbols=(function(){
     ctx.stroke();
   }
 
+  /* ── 상호유도 표시 (결합된 인덕터) ──
+   *   · 극성 점: ports[0](L 단자) 쪽 — 두 코일의 점 찍힌 끝이 같은 극성 (M > 0 기준)
+   *   · 철심선: 짝이 옆 칸에 있으면 짝을 향한 가장자리에 한 줄 — 둘이 합쳐 두 줄 철심이 된다.
+   *   draw() 가 이미 회전을 걸어 두었으므로 짝의 방향을 로컬 좌표로 되돌려 판단한다. */
+  function drawCoupling(ctx,comp,cx,cy,r){
+    var comps=App.State&&App.State.components; if(!comps) return;
+    var p=App.Netlist.coupledPartner(comp, comps); if(!p) return;
+    ctx.beginPath(); ctx.arc(cx-r*.74, cy-r*.22, r*.07, 0, Math.PI*2); ctx.fill();
+    var dx=p.gridX-comp.gridX, dy=p.gridY-comp.gridY;
+    if(Math.abs(dx)+Math.abs(dy)!==1) return;
+    var th=-(comp.rotation||0)*Math.PI/180, c=Math.cos(th), s=Math.sin(th);
+    var lx=dx*c-dy*s, ly=dx*s+dy*c;
+    ctx.beginPath();
+    if(Math.abs(ly)>0.5){ var y=cy+(ly>0?1:-1)*r*.78; ctx.moveTo(cx-r*.6,y); ctx.lineTo(cx+r*.6,y); }
+    else { var x=cx+(lx>0?1:-1)*r*.78; ctx.moveTo(x,cy-r*.45); ctx.lineTo(x,cy+r*.45); }
+    ctx.stroke();
+  }
+  /* 사이드바 '변압기' 아이콘: 세로 코일 둘 + 가운데 철심 두 줄 */
+  function drawTransformerMini(ctx,cx,cy,r){
+    [[-1,-Math.PI/2],[1,Math.PI/2]].forEach(function(a){
+      ctx.save(); ctx.translate(cx+a[0]*r*.42,cy); ctx.rotate(a[1]); drawInductor(ctx,0,0,r*.9); ctx.restore();
+    });
+    ctx.beginPath();
+    ctx.moveTo(cx-r*.1,cy-r*.5); ctx.lineTo(cx-r*.1,cy+r*.5);
+    ctx.moveTo(cx+r*.1,cy-r*.5); ctx.lineTo(cx+r*.1,cy+r*.5);
+    ctx.stroke();
+  }
+
   /* ── 분기점: 중심 점 + 각 포트로의 선 (3way/4way) ───────────────── */
   function drawJunction(ctx,cx,cy,r,ways){
     ctx.beginPath(); ctx.arc(cx,cy,r*.10,0,Math.PI*2); ctx.fill();   // 중심 점
@@ -193,7 +221,8 @@ App.Symbols=(function(){
    *   상태는 App.State.mode 로 판단한다 (드로어는 소자를 모른다). */
   function drawSwitch(ctx,cx,cy,r,opts){
     var comp=opts&&opts.comp;
-    var closed=App.Netlist.switchClosed(comp||{}, !!(App.State&&App.State.mode&&App.State.mode!=='edit'));
+    var S=App.State;
+    var closed=App.Netlist.switchClosed(comp||{}, !!(S&&S.mode&&S.mode!=='edit'&&!S.openTransient));
     var a=cx-r*.42, b=cx+r*.42, dot=r*.07;
     ctx.beginPath();
     ctx.moveTo(cx-r,cy); ctx.lineTo(a,cy);            // 좌측 단자선
@@ -254,19 +283,21 @@ App.Symbols=(function(){
   }
 
   /* ── BJT: 원 + 베이스 막대 + 컬렉터(위)·이미터(아래) 사선, 이미터 화살표 ──
-   *   포트: L=베이스, T=컬렉터, B=이미터. npn 화살표는 밖으로, pnp 는 안으로. */
+   *   포트: L=베이스(cx-r,cy), T=컬렉터(cx,cy-r), B=이미터(cx,cy+r).
+   *   컬렉터·이미터 세로 단자가 정확히 포트 x(=cx) 에서 끝나도록 원·막대를 왼쪽으로 0.30r 옮긴다
+   *   (원을 cx 에 두면 사선 끝이 cx+0.30r 이라 도선과 어긋난다). */
   function drawBJT(ctx,cx,cy,r,pnp){
-    var R=r*.55;
-    ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.stroke();
-    var bx=cx-r*.12, bh=r*.30;              // 베이스 막대
+    var R=r*.55, sx=cx-r*.30;               // sx = 원 중심 x (왼쪽으로 치우침)
+    ctx.beginPath(); ctx.arc(sx,cy,R,0,Math.PI*2); ctx.stroke();
+    var bx=sx-r*.12, bh=r*.30, ey=R*.82;    // 베이스 막대 · 사선 끝 높이 (원 안쪽)
     ctx.beginPath();
-    ctx.moveTo(cx-r,cy); ctx.lineTo(bx,cy);               // 베이스 단자
+    ctx.moveTo(cx-r,cy); ctx.lineTo(bx,cy);               // 베이스 단자 (L 포트에서 막대까지)
     ctx.moveTo(bx,cy-bh); ctx.lineTo(bx,cy+bh);           // 막대
-    ctx.moveTo(bx,cy-bh*.5); ctx.lineTo(cx+r*.30,cy-R*.9); ctx.lineTo(cx+r*.30,cy-r);   // 컬렉터
-    ctx.moveTo(bx,cy+bh*.5); ctx.lineTo(cx+r*.30,cy+R*.9); ctx.lineTo(cx+r*.30,cy+r);   // 이미터
+    ctx.moveTo(bx,cy-bh*.5); ctx.lineTo(cx,cy-ey); ctx.lineTo(cx,cy-r);   // 컬렉터 → T 포트
+    ctx.moveTo(bx,cy+bh*.5); ctx.lineTo(cx,cy+ey); ctx.lineTo(cx,cy+r);   // 이미터 → B 포트
     ctx.stroke();
     /* 이미터 화살표 */
-    var ex0=bx, ey0=cy+bh*.5, ex1=cx+r*.30, ey1=cy+R*.9;
+    var ex0=bx, ey0=cy+bh*.5, ex1=cx, ey1=cy+ey;
     var ang=Math.atan2(ey1-ey0,ex1-ex0), al=r*.22;
     var tipx, tipy, dir;
     if(pnp){ tipx=ex0+(ex1-ex0)*.25; tipy=ey0+(ey1-ey0)*.25; dir=ang+Math.PI; }
@@ -290,7 +321,11 @@ App.Symbols=(function(){
   DRAWERS[TYPE.AC_SOURCE] =function(ctx,cx,cy,r){ drawACSource(ctx,cx,cy,r); };
   DRAWERS[TYPE.RESISTOR]  =function(ctx,cx,cy,r){ drawResistor(ctx,cx,cy,r); };
   DRAWERS[TYPE.CAPACITOR] =function(ctx,cx,cy,r){ drawCapacitor(ctx,cx,cy,r); };
-  DRAWERS[TYPE.INDUCTOR]  =function(ctx,cx,cy,r){ drawInductor(ctx,cx,cy,r); };
+  DRAWERS[TYPE.INDUCTOR]  =function(ctx,cx,cy,r,opts){
+    if(opts&&opts.pair){ drawTransformerMini(ctx,cx,cy,r); return; }
+    drawInductor(ctx,cx,cy,r);
+    if(opts&&opts.comp) drawCoupling(ctx,opts.comp,cx,cy,r);
+  };
   DRAWERS[TYPE.JUNCTION_3]=function(ctx,cx,cy,r){ drawJunction(ctx,cx,cy,r,3); };
   DRAWERS[TYPE.JUNCTION_4]=function(ctx,cx,cy,r){ drawJunction(ctx,cx,cy,r,4); };
 
@@ -315,7 +350,7 @@ App.Symbols=(function(){
    * 메인 캔버스와 같은 이유로 HiDPI 대응 — 백업 저장소만 배율만큼 키우고
    * CSS 크기는 원래 논리 크기로 고정한다. 논리 크기는 최초 호출 때의
    * width/height 속성값이며, 재호출로 배율이 누적되지 않게 보관해 둔다. */
-  function drawMini(canvas,type){
+  function drawMini(canvas,type,opts){
     var w=canvas._miniW||canvas.width, h=canvas._miniH||canvas.height;
     canvas._miniW=w; canvas._miniH=h;
     var dpr=window.devicePixelRatio||1;
@@ -324,10 +359,22 @@ App.Symbols=(function(){
     var ctx=canvas.getContext('2d');
     ctx.setTransform(dpr,0,0,dpr,0,0);   /* width 대입이 변환을 지우므로 재설정 */
     ctx.clearRect(0,0,w,h);
-    draw(ctx,type,w/2,h/2,Math.min(w,h)*.78,0,{color:App.SN.TOKENS.ink});
+    var o={color:App.SN.TOKENS.ink}; if(opts) Object.keys(opts).forEach(function(k){o[k]=opts[k];});
+    draw(ctx,type,w/2,h/2,Math.min(w,h)*.78,0,o);
   }
 
-  return{draw,drawLabel,drawMini,makeLabel:_makeLabel,labelFontSize,labelOffsetRatio};
+  /* 전구 광량 — 밝기 br(0~1.5). 정격의 10% 아래는 '꺼짐' (논리 회로의 L 레벨 등 미소 전력은 빛나지 않는다) */
+  function drawGlow(ctx,cx,cy,cellPx,br){
+    if(!(br>0.10)) return;
+    var gr=ctx.createRadialGradient(cx,cy,cellPx*0.05,cx,cy,cellPx*0.62);
+    var a=0.12+0.6*Math.min(1,(br-0.10)/0.9);
+    gr.addColorStop(0,'rgba(255,214,90,'+a.toFixed(3)+')');
+    gr.addColorStop(0.55,'rgba(255,190,60,'+(a*0.45).toFixed(3)+')');
+    gr.addColorStop(1,'rgba(255,170,40,0)');
+    ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(cx,cy,cellPx*0.62,0,Math.PI*2); ctx.fill();
+  }
+
+  return{draw,drawLabel,drawMini,drawGlow,makeLabel:_makeLabel,labelFontSize,labelOffsetRatio};
 })();
 
 }());

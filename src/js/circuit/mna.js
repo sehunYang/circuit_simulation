@@ -107,6 +107,13 @@ App.MNA=(function(){
     return solveReal(sys.A,sys.b);
   }
 
+  /* 접지 없는 섬의 기준 노드 핀 (Netlist.pinNodes) — 노드를 접지에 1 S 로 묶어 전위 0 으로 고정.
+   *   섬 안에는 접지로 가는 다른 길이 없으므로 전류가 흐르지 않는다 (상호유도 2차 회로 등). */
+  function stampPins(sys, nl){
+    var pins=(nl&&nl.pinNodes)||[];
+    for(var i=0;i<pins.length;i++){ var n=pins[i]-1; if(n>=0) sys.add(n,n,1); }
+  }
+
   /* 소자 보조 미지수 배치: 노드 수 N(접지 포함) 뒤에 extra>0 인 소자 순서대로 */
   function layout(nodeCount, devices){
     var k=nodeCount-1;
@@ -114,7 +121,7 @@ App.MNA=(function(){
     return k;   // 총 미지수 수
   }
 
-  return{makeSystem:makeSystem, solve:solve, solveReal:solveReal, solveComplex:solveComplex, layout:layout};
+  return{makeSystem:makeSystem, solve:solve, solveReal:solveReal, solveComplex:solveComplex, layout:layout, stampPins:stampPins};
 })();
 
 }());

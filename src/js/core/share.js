@@ -16,14 +16,14 @@ var App=window.App;
 App.Share=(function(){
   /* 소자 필드 → 짧은 키 */
   var KEYS=[['type','t'],['gridX','x'],['gridY','y'],['rotation','r'],['value','v'],['value2','w'],
-            ['label','l'],['rint','i'],['on','o'],['autoFor','a']];
+            ['label','l'],['rint','i'],['on','o'],['autoFor','a'],['couple','m']];   /* m = 상호유도 짝 (번호) */
 
   function encode(comps, wires){
     comps=comps||App.State.components; wires=wires||App.State.wires;
     var idx={}; comps.forEach(function(c,i){ idx[c.id]=i; });
     var C=comps.map(function(c){
       var o={}; KEYS.forEach(function(k){ var v=c[k[0]]; if(v==null||v===''||(k[0]==='rotation'&&!v)) return;
-        if(k[0]==='autoFor'){ if(idx[v]!=null) o[k[1]]=idx[v]; return; }
+        if(k[0]==='autoFor'||k[0]==='couple'){ if(idx[v]!=null) o[k[1]]=idx[v]; return; }
         o[k[1]]=v; });
       return o;
     });
@@ -42,9 +42,11 @@ App.Share=(function(){
                value:(o.v!=null?o.v:0),value2:(o.w!=null?o.w:null),label:o.l||''};
         if(o.i!=null) c.rint=o.i; if(o.o===false||o.o===true) c.on=o.o;
         if(o.a!=null) c._autoIdx=o.a;
+        if(o.m!=null) c._coupleIdx=o.m;
         return c;
       });
-      comps.forEach(function(c){ if(c._autoIdx!=null&&comps[c._autoIdx]){ c.autoFor=comps[c._autoIdx].id; } delete c._autoIdx; });
+      comps.forEach(function(c){ if(c._autoIdx!=null&&comps[c._autoIdx]){ c.autoFor=comps[c._autoIdx].id; } delete c._autoIdx;
+                                 if(c._coupleIdx!=null&&comps[c._coupleIdx]){ c.couple=comps[c._coupleIdx].id; } delete c._coupleIdx; });
       var wires=(d.w||[]).map(function(a){
         var f=comps[a[0]], t=comps[a[2]]; if(!f||!t) return null;
         return {id:App.State.genId(),fromId:f.id,fromPort:a[1],toId:t.id,toPort:a[3],direction:a[4]?'V-first':'H-first'};

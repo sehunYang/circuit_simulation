@@ -180,19 +180,12 @@ App.EditRenderer=(function(){
       var isDragged=(comp.id===draggedId);
       _ctx.save();
       if(isDragged) _ctx.globalAlpha=0.28;
-      /* 전구 광량 — 밝기 ∝ 전력(I²R)/정격. 화면 전용(촬영에는 없음). */
+      /* 전구 광량 — 밝기 = 전력/정격 (App.Post.bulbBrightness). 화면 전용(촬영에는 없음).
+       *   실행 모드에서 직류 과도 파형이 있으면 실행 렌더러가 매 프레임 순간전력으로 그린다 (여기서는 생략). */
       var srB=App.State.solverResult;
-      if(comp.type===TYPE.BULB&&!isDragged&&srB&&srB.valid&&srB.dc&&srB.dc.out&&srB.dc.out[comp.id]){
-        var br=Math.max(0,Math.min(1.5,srB.dc.out[comp.id].brightness||0));
-        /* 정격의 10% 아래는 '꺼짐' (논리 회로의 L 레벨 등 미소 전력은 빛나지 않는다) */
-        if(br>0.10){
-          var gr=_ctx.createRadialGradient(cx,cy,cellPx*0.05,cx,cy,cellPx*0.62);
-          var a=0.12+0.6*Math.min(1,(br-0.10)/0.9);
-          gr.addColorStop(0,'rgba(255,214,90,'+a.toFixed(3)+')');
-          gr.addColorStop(0.55,'rgba(255,190,60,'+(a*0.45).toFixed(3)+')');
-          gr.addColorStop(1,'rgba(255,170,40,0)');
-          _ctx.fillStyle=gr; _ctx.beginPath(); _ctx.arc(cx,cy,cellPx*0.62,0,Math.PI*2); _ctx.fill();
-        }
+      if(comp.type===TYPE.BULB&&!isDragged&&srB&&srB.valid){
+        var runWave=(App.State.mode==='run'&&srB.wave&&!srB.acPhasor);
+        if(!runWave) App.Symbols.drawGlow(_ctx,cx,cy,cellPx,App.Post.bulbBrightness(srB,comp,null));
       }
       App.Symbols.draw(_ctx,comp.type,cx,cy,cellPx,comp.rotation,{comp:comp});
       if(!isDragged) App.Symbols.drawLabel(_ctx,comp,cx,cy,cellPx);

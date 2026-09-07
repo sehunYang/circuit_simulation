@@ -64,7 +64,7 @@ App.Main=(function(){
       var lbl=document.createElement('span');lbl.className='s-label';
       function _refresh(){
         var cur=grp?grp.options[grp.current]:item;
-        App.Symbols.drawMini(cv,cur.type);
+        App.Symbols.drawMini(cv,cur.type,cur.pair?{pair:true}:null);
         lbl.textContent=grp?(grp.current===0?grp.label:cur.label):item.label;
       }
       _refresh();
@@ -77,7 +77,7 @@ App.Main=(function(){
         App.Interaction.startSidebarDrag(eff,e.clientX,e.clientY,div);
       });
       sb.appendChild(div);
-      if(item.type===TYPE.INDUCTOR){var sep=document.createElement('div');sep.className='sidebar-sep';sb.appendChild(sep);}
+      if(item.sepAfter){var sep=document.createElement('div');sep.className='sidebar-sep';sb.appendChild(sep);}
     });
     _groups=groups;
     /* ── 전체 초기화 버튼 ── */
@@ -235,7 +235,7 @@ App.Main=(function(){
     grp.options.forEach(function(opt,i){
       var b=document.createElement('div'); b.className='sb-pick'+(i===grp.current?' current':'');
       var cv=document.createElement('canvas'); cv.width=30; cv.height=30; cv.style.pointerEvents='none';
-      App.Symbols.drawMini(cv,opt.type);
+      App.Symbols.drawMini(cv,opt.type,opt.pair?{pair:true}:null);
       var t=document.createElement('span'); t.textContent=opt.label;
       b.appendChild(cv); b.appendChild(t);
       b.addEventListener('pointerdown',function(e){ e.stopPropagation(); });
@@ -294,7 +294,34 @@ App.Main=(function(){
     return null;
   }
 
+  /* 변압기: 결합 인덕터 두 개를 가로로 나란히 — 왼쪽 rot 270 · 오른쪽 rot 90 이면 코일이 바깥으로
+   *   불룩하고 철심(두 줄)이 가운데 온다. 두 칸이 비어 있는 자리를 (gx,gy) 근처에서 찾는다. */
+  function _placePair(item,gx,gy){
+    var S=App.State, spot=null;
+    function free(x,y){ var cg=App.Geo.clampGrid(x,y); return cg.gridX===x&&cg.gridY===y&&!S.isOccupied(x,y,null); }
+    outer:for(var r=0;r<=15;r++){
+      for(var dg=-r;dg<=r;dg++){for(var dr=-r;dr<=r;dr++){
+        if(Math.abs(dg)!==r&&Math.abs(dr)!==r) continue;
+        var x=gx+dg, y=gy+dr;
+        if(free(x,y)&&free(x+1,y)){ spot={x:x,y:y}; break outer; }
+        if(free(x-1,y)&&free(x,y)){ spot={x:x-1,y:y}; break outer; }
+      }}
+    }
+    if(!spot){ showErrorToast('배치 공간이 없습니다.'); return; }
+    var k=item.defValue2||0.99;
+    var a={id:S.genId(),type:TYPE.INDUCTOR,gridX:spot.x,  gridY:spot.y,rotation:270,value:item.defValue,value2:k,label:''};
+    var b={id:S.genId(),type:TYPE.INDUCTOR,gridX:spot.x+1,gridY:spot.y,rotation:90, value:item.defValue,value2:k,label:''};
+    a.couple=b.id; b.couple=a.id;
+    S.addComponent(a); S.addComponent(b);
+    S.autoConnectAdjacent(a.id); S.autoConnectAdjacent(b.id);
+    S.selectedId=a.id;
+    App.PropPanel.show(a.id);
+    App.EditRenderer.startSelAnimation();
+    App.Events.emit('component:placed',a);
+  }
+
   function _place(item,gx,gy){
+    if(item.pair){ _placePair(item,gx,gy); return; }
     var comp={id:App.State.genId(),type:item.type,gridX:gx,gridY:gy,rotation:0,value:item.defValue,value2:item.defValue2,label:''};
     if(item.type===TYPE.LABEL) comp.label=item.label||'VCC';   /* 레일 이름 */
     if(item.type===TYPE.DC_SOURCE||item.type===TYPE.AC_SOURCE) comp.rint=0;   /* 내부저항 (Ω) */

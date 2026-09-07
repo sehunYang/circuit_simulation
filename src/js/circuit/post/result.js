@@ -172,6 +172,25 @@ App.Post.avgPower=function(view, id){
 };
 App.Post.fail=fail;
 
+/* ── 전구 밝기 = 전력 / 정격 (0 ~ 1.5) — 화면(편집·실행)이 같은 규칙을 쓴다 ──
+ *   교류(정상 주기): 한 주기 평균전력 (파형이 있으면 waveStats, 없으면 페이저) — 백열전구는 열 관성으로 깜빡이지 않는다
+ *   직류 과도 (t 주어짐): 파형의 순간전력 v(t)·i(t) — 스위치를 닫는 순간의 번쩍임·꺼짐이 보인다
+ *   그 외(직류 정상상태): 동작점 P/정격 */
+App.Post.bulbBrightness=function(view, comp, t){
+  if(!view||!view.valid) return 0;
+  var rated=comp.value2>0?comp.value2:1, P;
+  if(view.acPhasor){
+    var ws=App.Post.waveStats(view, comp.id);
+    P=ws?ws.pAvg:App.Post.avgPower(view, comp.id);
+  } else if(t!=null&&view.wave&&view.wave.elem[comp.id]){
+    var s=view.wave.sample(comp.id, t); P=s.v*s.i;
+  } else {
+    var o=view.dc&&view.dc.out&&view.dc.out[comp.id];
+    return o?Math.max(0,Math.min(1.5,o.brightness||0)):0;
+  }
+  return Math.max(0,Math.min(1.5,Math.abs(P||0)/rated));
+};
+
 /* ── 파형 통계 — 정상상태 한 주기(교류) 또는 마지막 1/4 구간(직류)의 peak·rms·avg ──
  *   비선형+교류(정류)에서는 페이저가 무의미하므로 표시값은 여기서 나온다.
  *   선형 교류에서는 페이저 값과 같다 (TD-4 로 검증). */

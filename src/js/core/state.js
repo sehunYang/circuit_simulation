@@ -95,6 +95,8 @@ App.State=(function(){
       _mutate(function(){
         /* 규칙: 도선 먼저 제거 후 소자 제거 (역순 금지) */
         s.wires=s.wires.filter(function(w){return !ids[w.fromId]&&!ids[w.toId];});
+        /* 상호유도 짝이 지워지면 남은 인덕터의 결합도 푼다 */
+        s.components.forEach(function(c){ if(c.couple&&ids[c.couple]) delete c.couple; });
         s.components=s.components.filter(function(c){return !ids[c.id];});
         if(ids[s.selectedId])s.selectedId=null;
       });

@@ -22,6 +22,7 @@ App.Analysis.ac=function(nl, devs, xOP, omega, opts){
     var sys=MNA.makeSystem(N,true);
     var ctx={mode:'ac', rser:rser};
     for(var i=0;i<devs.length;i++) devs[i].loadAC(sys, xOP, omega, ctx);
+    MNA.stampPins(sys, nl);
     if(gmin>0) for(var n=0;n<nNode;n++) sys.add(n,n,gmin);
     return MNA.solve(sys);
   }
