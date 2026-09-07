@@ -400,7 +400,7 @@ async function inkCount(p,sel,pred){ return p.evaluate((sel,predSrc)=>{const cv=
   const flowE=await p.evaluate(async()=>{
     const P=window.App.POE; P.open(); P.start(P.EXAMPLES[0]);
     const body=document.getElementById('poe-body');
-    const opts=body.querySelectorAll('.poe-opt'); opts[1].click();   /* 오답 선택 (A=B=C) */
+    const opts=[...body.querySelectorAll('.poe-opt')]; opts.find(b=>/A = B = C/.test(b.textContent)).click();   /* 오답 선택 (A=B=C) — 선택지는 섞여 있다 */
     await new Promise(r=>setTimeout(r,50));
     body.querySelector('.poe-primary').click();   /* 관찰하기 */
     await new Promise(r=>setTimeout(r,300));

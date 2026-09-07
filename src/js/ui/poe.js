@@ -663,7 +663,9 @@ App.POE=(function(){
       _body.appendChild(h('div','poe-q',ex.question));
       if(ex.truth) _body.appendChild(truthTable(ex,'predict'));
       var opts=h('div','poe-opts');
-      ex.options.forEach(function(o,i){
+      /* 선택지는 예제마다 정해진 순서로 섞어 보인다 (정답이 늘 첫 줄이면 예측이 아니다). _picked 는 원래 인덱스 */
+      _optionOrder(ex).forEach(function(i){
+        var o=ex.options[i];
         var b=btn(o.label,'poe-opt'+(_picked===i?' picked':''),function(){ _picked=i; renderStep(); });
         opts.appendChild(b);
       });
@@ -824,6 +826,16 @@ App.POE=(function(){
       tbl.appendChild(tr);
     });
     return tbl;
+  }
+  /* 선택지 표시 순서 — 예제 id 로 시드를 잡은 결정적 셔플 (같은 예제는 늘 같은 순서, 정답 위치는 예제마다 다르다) */
+  function _optionOrder(ex){
+    if(ex._order&&ex._order.length===ex.options.length) return ex._order;
+    var n=ex.options.length, idx=[]; for(var i=0;i<n;i++) idx.push(i);
+    if(n<=1){ ex._order=idx; return idx; }
+    var seed=7; for(var k=0;k<ex.id.length;k++) seed=(seed*31+ex.id.charCodeAt(k)+k*17)>>>0;
+    function rnd(){ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; }
+    for(var j=n-1;j>0;j--){ var r=Math.floor(rnd()*(j+1)); var t=idx[j]; idx[j]=idx[r]; idx[r]=t; }
+    ex._order=idx; return idx;
   }
   function truthPredComplete(ex){ return !!(ex._truthPred&&ex._truthPred.every(function(v){return v!=null;})); }
 

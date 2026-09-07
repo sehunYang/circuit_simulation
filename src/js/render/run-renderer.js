@@ -32,7 +32,9 @@ App.RunRenderer=(function(){
    *    반영하지 못했다) */
   /* 정규화 바닥값: 회로 전체가 이 값보다 작으면(다이오드 역방향 누설 pA 등) 흐름 없음으로 본다.
    *   상대 정규화만 쓰면 누설 전류가 '최대 전류' 가 되어 전자가 움직여 버린다. */
-  var I_FLOOR = 1e-9;
+  var I_FLOOR = 1e-7;   /* 0.1 µA — 꺼진 트랜지스터의 누설(nA)·역방향 다이오드(pA)는 흐름이 아니다 */
+  /* 바닥값 아래의 전류는 0 으로 본다 (정규화 기준이 누설 전류가 되어 전자가 움직이는 것을 막는다) */
+  function _floor(i){ return Math.abs(i)<I_FLOOR ? 0 : i; }
   function _particleCount(ratio, pathLen){
     if(ratio<0.01) return 0;    /* 최대 전류의 1% 미만(5τ 뒤 e⁻⁵=0.7% 등)은 흐름 없음 */
     var n=Math.round(ratio*pathLen/ELECTRON_SPACING_MAX);
@@ -79,6 +81,7 @@ App.RunRenderer=(function(){
    * ─────────────────────────────────────────────────────────────── */
   /* 주기 정상상태(교류)의 도선 풀 갱신: 부호 있는 사인 속력, 개수 고정 */
   function _setPeriodic(pool, instI, ref){
+    instI=_floor(instI);
     var dir = instI >= 0 ? -1 : 1;                       /* 전자는 관례 전류의 반대 */
     var spd = ref > 1e-15 ? Math.abs(instI)/ref*AC_SPEED_AMP : 0;
     pool.particles.forEach(function(p){ p.dir = dir; p.speed = spd; });
@@ -117,7 +120,7 @@ App.RunRenderer=(function(){
 
     App.State.wires.forEach(function(wire){
       var pool = _pools[wire.id]; if(!pool) return;
-      var instI = wireInstI[wire.id] || 0;
+      var instI = _floor(wireInstI[wire.id] || 0);
       if(sr.acPhasor){ _setPeriodic(pool, instI, _ampMax); return; }   /* 교류: 왕복 (아래는 옛 경로 — 도달하지 않음) */
       var absI  = Math.abs(instI);
       /* 전자는 관례 전류(instI>0 = from→to)의 반대로 움직인다 — DC 경로의
@@ -164,7 +167,7 @@ App.RunRenderer=(function(){
   function _updatePoolsWave(t, sr){
     App.State.wires.forEach(function(wire){
       var pool = _pools[wire.id]; if(!pool) return;
-      var instI = sr.wave.sampleWire(wire.id, t);       /* from→to 가 + */
+      var instI = _floor(sr.wave.sampleWire(wire.id, t));   /* from→to 가 + · 바닥값 아래는 0 */
       if(sr.acPhasor){ _setPeriodic(pool, instI, _waveMax); return; }   /* 교류·정류·혼합: 왕복, 개수 고정 */
       var absI  = Math.abs(instI);
       var newDir = instI >= 0 ? -1 : 1;                  /* 전자는 관례 전류의 반대 */
@@ -247,7 +250,7 @@ App.RunRenderer=(function(){
 
     App.State.wires.forEach(function(wire){
       var I = wireRef(wire);
-      if(Math.abs(I)<1e-15) return;
+      if(Math.abs(I)<I_FLOOR) return;   /* 누설 수준의 도선은 전자 없음 */
 
       /* ── 속도: 전류 크기에 비례 (전위차 기반 아님) ──────────────
        * 과거 dV 기반은 L 도선(dV≈0)이 느려지는 버그가 있었음.
