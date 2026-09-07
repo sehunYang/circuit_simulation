@@ -5,6 +5,7 @@
 ![Vanilla JS](https://img.shields.io/badge/Vanilla%20JS-%EB%B9%8C%EB%93%9C%20%EC%97%86%EC%9D%8C-f7df1e?style=flat-square&logo=javascript&logoColor=000)
 ![Three.js](https://img.shields.io/badge/Three.js-%EC%88%98%EB%A1%9C%20%EB%B9%84%EC%9C%A0%203D-000?style=flat-square&logo=three.js)
 ![Tests](https://img.shields.io/badge/%EB%AC%BC%EB%A6%AC%20%EA%B2%80%EC%A6%9D-313%20%2B%20144-16a34a?style=flat-square)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
 고등학교 물리 수업용 **웹 전기회로 시뮬레이터**입니다. 격자에 소자를 놓고 도선으로 이으면
 회로망 해석(MNA)으로 그 자리에서 풀어 전위·전압·전류를 보여 주고, 전자의 흐름과 **물의 수로 비유(3D)**,
@@ -537,3 +538,7 @@ node tests/browser/run.js     # 화면에 보이는 값·전자·POE·진리표 
 ---
 
 <sub>만든이 · 양세훈 | 교실에서 자유롭게 쓰세요</sub>
+
+## 라이선스
+
+[MIT License](LICENSE) — 출처를 남기면 수업·교재·다른 프로젝트에 자유롭게 쓰고 고쳐 쓸 수 있습니다.
