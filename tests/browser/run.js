@@ -693,6 +693,44 @@ async function inkCount(p,sel,pred){ return p.evaluate((sel,predSrc)=>{const cv=
   chk('POE 설명: 다시 풀기·다음 예제 버튼', g5.btns.some(t=>/다시 풀기/.test(t))&&g5.btns.some(t=>/다음 예제/.test(t)), JSON.stringify(g5.btns));
   chk('POE 목록: 진행 요약(전체·풀이·정답 수)', /전체 \d+개 중 \d+개 풀이 · \d+개 정답/.test(g5.prog), g5.prog);
 
+  /* 5b. 초기화: 클릭 → 확인 대화상자 → 상태·화면이 함께 비고, 실행 취소 한 번으로 복구된다 */
+  const clrPos=await p.evaluate(()=>{ const e=document.querySelector('.sidebar-clear'); const r=e.getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; });
+  await p.evaluate(()=>{ const S=window.App.State; S.components.map(c=>c.id).forEach(id=>{ if(S.getComponent(id)) S.removeComponent(id); });
+    document.getElementById('sg-demo').click(); });
+  await L.sleep(400);
+  /* 캔버스 잉크 — 첫 판독은 불안정하므로 두 번 읽어 두 번째 값을 쓴다 */
+  const inkOf=async()=>{ const f=()=>p.evaluate(()=>{ const cv=document.getElementById('canvas-main'), c=cv.getContext('2d');
+      const d=c.getImageData(0,0,cv.width,cv.height).data; let n=0; for(let i=3;i<d.length;i+=4) if(d[i]>0) n++; return n; });
+    await f(); await L.sleep(60); return f(); };
+  const inkBefore=await inkOf();
+  await p.mouse.click(clrPos.x,clrPos.y); await L.sleep(250);
+  const dlg=await p.evaluate(()=>{ const b=document.getElementById('confirm-back');
+    return {vis:b.classList.contains('visible'), title:b.querySelector('.cf-title').textContent,
+            msg:b.querySelector('.cf-msg').textContent, ok:document.getElementById('cf-ok').textContent}; });
+  chk('초기화: 클릭하면 확인 대화상자 (소자·도선 개수 안내)', dlg.vis&&/초기화할까요/.test(dlg.title)&&/소자 3개와 도선 3개/.test(dlg.msg)&&/초기화/.test(dlg.ok), JSON.stringify(dlg));
+  /* 취소 → 회로 유지 */
+  await p.evaluate(()=>document.getElementById('cf-cancel').click()); await L.sleep(200);
+  const kept=await p.evaluate(()=>({dlg:!!document.querySelector('#confirm-back.visible'), n:window.App.State.components.length}));
+  chk('초기화: 취소하면 회로가 그대로', !kept.dlg&&kept.n===3, JSON.stringify(kept));
+  /* 확인 → 상태·화면 모두 빈다 */
+  await p.mouse.click(clrPos.x,clrPos.y); await L.sleep(250);
+  await p.evaluate(()=>document.getElementById('cf-ok').click()); await L.sleep(400);
+  const cleared=await p.evaluate(()=>({n:window.App.State.components.length, w:window.App.State.wires.length,
+    guide:!!document.querySelector('#start-guide.visible'), toast:document.getElementById('toast').textContent}));
+  const inkAfter=await inkOf();
+  chk('초기화: 상태가 비고 캔버스도 지워진다 (예전에는 화면에 회로가 남았다)',
+      cleared.n===0&&cleared.w===0&&inkBefore>500&&inkAfter===0, JSON.stringify({cleared,inkBefore,inkAfter}));
+  chk('초기화: 시작 안내가 다시 뜨고 알림이 나온다', cleared.guide&&/초기화했습니다/.test(cleared.toast), JSON.stringify(cleared));
+  /* 실행 취소 한 번으로 통째로 복구 */
+  await p.evaluate(()=>{ window.App.State.undo(); window.App.PropPanel.refresh(); }); await L.sleep(300);
+  const undone=await p.evaluate(()=>({n:window.App.State.components.length, w:window.App.State.wires.length}));
+  chk('초기화: 실행 취소 한 번으로 회로 전체 복구', undone.n===3&&undone.w===3, JSON.stringify(undone));
+  /* 빈 회로에서는 대화상자 대신 안내 */
+  await p.evaluate(()=>{ const S=window.App.State; S.components.map(c=>c.id).forEach(id=>{ if(S.getComponent(id)) S.removeComponent(id); }); window.App.Solver.solveNow(); });
+  await L.sleep(200); await p.mouse.click(clrPos.x,clrPos.y); await L.sleep(250);
+  const empty=await p.evaluate(()=>({dlg:!!document.querySelector('#confirm-back.visible'), toast:document.getElementById('toast').textContent}));
+  chk('초기화: 빈 회로에서는 대화상자 없이 안내만', !empty.dlg&&/지울 회로가 없습니다/.test(empty.toast), JSON.stringify(empty));
+
   /* 6. 모바일: 모드 바와 툴바가 겹치지 않는다 */
   const mp=await L.newPage(b,390,780,2,true);
   await L.sleep(500);

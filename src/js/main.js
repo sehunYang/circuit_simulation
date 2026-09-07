@@ -91,35 +91,43 @@ App.Main=(function(){
     var clrLbl=document.createElement('span');clrLbl.className='s-label';clrLbl.textContent='초기화';
     var clrIcon=document.createElement('span');clrIcon.style.cssText='font-size:16px;line-height:1;color:var(--danger-text)';clrIcon.textContent='⌫';
     clrBtn.appendChild(clrIcon);clrBtn.appendChild(clrLbl);
-    clrBtn.addEventListener('pointerdown',function(e){
+    clrBtn.title='회로 초기화 — 놓은 소자와 도선을 모두 지웁니다';
+    /* 클릭 → 확인 대화상자 (예전에는 1.2초 롱프레스여서 눌러도 아무 일이 없어 보였다) */
+    clrBtn.addEventListener('pointerdown',function(e){ e.stopPropagation(); });
+    clrBtn.addEventListener('click',function(e){
       e.stopPropagation();
-      if(!App.State.components.length&&!App.State.wires.length) return;
-      showErrorToast('길게 눌러서 초기화하세요',1500);
-    });
-    /* 롱프레스 1.2초 → 전체 초기화 확인 */
-    var clrTimer=null;
-    clrBtn.addEventListener('pointerdown',function(e){
-      e.stopPropagation();
-      clrTimer=setTimeout(function(){
-        /* 모드 강제 편집으로 복귀 */
-        if(App.State.mode==='run')     App.RunRenderer.stop();
-        if(App.State.mode==='analogy') App.AnalogyRenderer.stop();
-        _setAnalogyUIHidden(false);   /* UI 복원 (#6) */
-        App.State.mode='edit';
-        document.querySelectorAll('.mode-btn').forEach(function(b){b.classList.toggle('active',b.dataset.mode==='edit');});
-        /* 상태 완전 초기화 */
-        while(App.State.components.length) App.State.removeComponent(App.State.components[0].id);
-        App.State.selectedId=null;
-        App.PropPanel.hide();
-        App.EditRenderer.stopSelAnimation();
-        App.Events.emit('viewport:changed');
-        showErrorToast('회로를 초기화했습니다',2000);
-      },1200);
-    });
-    ['pointerup','pointercancel'].forEach(function(ev){
-      clrBtn.addEventListener(ev,function(){clearTimeout(clrTimer);});
+      var n=App.State.components.length;
+      if(!n&&!App.State.wires.length){ showErrorToast('지울 회로가 없습니다',1500); return; }
+      App.Guide.confirm({
+        title:'회로를 초기화할까요?',
+        message:'놓은 소자 '+n+'개와 도선 '+App.State.wires.length+'개가 모두 지워집니다. 되돌리려면 초기화 뒤 Ctrl + Z 를 누르세요.',
+        okLabel:'초기화', danger:true,
+        onOk:clearAll,
+      });
     });
     sb.appendChild(clrBtn);
+  }
+
+  /* ── 회로 전체 지우기 (초기화 버튼·확인 대화상자에서 호출) ── */
+  function clearAll(){
+    var S=App.State;
+    if(S.mode==='run')     App.RunRenderer.stop();
+    if(S.mode==='analogy') App.AnalogyRenderer.stop();
+    _setAnalogyUIHidden(false);
+    S.mode='edit';
+    _updateModeBar('edit');
+    App.TransientGraph.hide(); if(App.Scope) App.Scope.hide();
+    S.clearAll();                        /* 한 동작 = 실행 취소 한 번으로 복구 */
+    App.PropPanel.hide();
+    App.EditRenderer.stopSelAnimation();
+    App.Solver.solveNow();
+    App.Events.emit('state:changed');
+    App.Events.emit('viewport:changed');
+    /* 예약 프레임에 기대지 않고 즉시 비우고, 다음 프레임에 한 번 더 확인한다
+     *   (이 사이에 다른 모듈이 예약해 둔 프레임이 옛 화면을 다시 그릴 수 있다) */
+    App.EditRenderer.forceRender();
+    requestAnimationFrame(function(){ App.EditRenderer.forceRender(); });
+    showErrorToast('회로를 초기화했습니다',2000);
   }
 
   /* 촬영 — 흰 바탕·검정 선의 SVG 파일로 저장 (App.Capture 가 담당).

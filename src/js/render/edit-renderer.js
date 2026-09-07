@@ -24,7 +24,7 @@ App.EditRenderer=(function(){
     node:  '#3d4453',   /* 연결된 포트 */
   };
   var _cv,_ctx;
-  var _pending=false;
+  var _pending=false, _renderRaf=null;
   var _wirePreview=null;       // {x1,y1,x2,y2,dir} — 도선 미리보기
   var _nearestPort=null;       // {componentId,port} — 연결 중 가장 가까운 포트
   var _flashWires={};          // {wireId: endTime} — 도선 완성 플래시
@@ -33,10 +33,18 @@ App.EditRenderer=(function(){
 
   function init(){_cv=document.getElementById('canvas-main');_ctx=_cv.getContext('2d');SN=App.SN;}
 
+  /* 다음 프레임에 한 번만 그린다. 예약된 프레임이 밖에서 취소되더라도 다시 살아나도록
+   *   id 를 들고 있다가 stop…() 이 아닌 곳에서 사라지면 다음 호출이 새로 예약한다. */
   function scheduleRender(){
     if(_pending) return;
     _pending=true;
-    requestAnimationFrame(function(){_pending=false;render();});
+    _renderRaf=requestAnimationFrame(function(){_pending=false;_renderRaf=null;render();});
+  }
+  /* 강제 갱신 — 예약이 어떤 이유로든 날아갔을 때(초기화·모드 전환) 화면을 반드시 맞춘다 */
+  function forceRender(){
+    if(_renderRaf){cancelAnimationFrame(_renderRaf);_renderRaf=null;}
+    _pending=false;
+    render();
   }
 
   function setWirePreview(v){_wirePreview=v;}
@@ -605,11 +613,16 @@ App.EditRenderer=(function(){
     App.SN.label(ctx,wire.direction==='H-first'?'H':'V',bp.x,bp.y,8,{color:UI.accent});
   }
 
-  /* ── 선택 박스 애니메이션 루프 ── */
+  /* ── 선택 박스 애니메이션 루프 ──
+   *   콜백에 들어오는 순간 보관한 id 를 지운다. 이미 실행된 프레임의 id 를 들고 있으면
+   *   브라우저가 그 번호를 재사용할 때 stop…() 이 엉뚱한 프레임(대개 scheduleRender 의
+   *   렌더 프레임)을 취소해 버려 _pending 이 참인 채로 남고 화면이 갱신되지 않는다
+   *   (초기화해도 회로가 지워지지 않던 원인). */
   function startSelAnimation(){
     if(_selAnimId) return;
     (function loop(){
-      if(!App.State.selectedId){_selAnimId=null;return;}
+      _selAnimId=null;                       /* 이 콜백은 이미 실행됨 — 취소할 프레임 없음 */
+      if(!App.State.selectedId) return;
       scheduleRender();
       _selAnimId=requestAnimationFrame(loop);
     })();
@@ -623,7 +636,8 @@ App.EditRenderer=(function(){
   function startPortAnimation(){
     if(_portAnimId) return;
     (function loop(){
-      if(!App.State.connectingPort){_portAnimId=null;return;}
+      _portAnimId=null;
+      if(!App.State.connectingPort) return;
       scheduleRender();
       _portAnimId=requestAnimationFrame(loop);
     })();
@@ -632,7 +646,7 @@ App.EditRenderer=(function(){
     if(_portAnimId){cancelAnimationFrame(_portAnimId);_portAnimId=null;}
   }
 
-  return{init,scheduleRender,render,
+  return{init,scheduleRender,render,forceRender,
          setWirePreview,setNearestPort,flashWire,
          startSelAnimation,stopSelAnimation,
          startPortAnimation,stopPortAnimation};

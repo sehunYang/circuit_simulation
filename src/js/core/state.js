@@ -102,6 +102,10 @@ App.State=(function(){
       });
       return true;
     },
+    /* 회로 전체 지우기 — 한 동작으로 묶어 Ctrl+Z 한 번에 되돌아가게 한다
+     *   (소자를 하나씩 지우면 되돌리기도 하나씩이라 초기화를 물릴 수가 없다).
+     *   전원에 딸린 스위치의 단독 삭제 금지 규칙도 여기서는 적용되지 않는다 — 전부 지우기 때문. */
+    clearAll:function(){ _mutate(function(){ s.wires=[]; s.components=[]; s.selectedId=null; s.connectingPort=null; }); },
     addWire:function(w){ _mutate(function(){ s.wires.push(w); }); },
     removeWire:function(id){
       _mutate(function(){

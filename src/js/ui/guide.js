@@ -119,6 +119,36 @@ App.Guide=(function(){
     showErrorToast('예제 회로를 만들었습니다 — 아래 “실행”을 눌러 전자가 흐르는 것을 보세요',3200);
   }
 
+  /* ── 확인 대화상자 ──
+   *   confirm({title, message, okLabel, danger, onOk}) — 되돌리기 어려운 동작 앞에 세운다.
+   *   Esc·바깥 클릭·취소는 아무 일도 하지 않는다. */
+  function confirm(opts){
+    var back=document.getElementById('confirm-back');
+    if(!back){ if(window.confirm(opts.title)) opts.onOk&&opts.onOk(); return; }
+    var box=back.querySelector('.cf-box');
+    back.querySelector('.cf-title').textContent=opts.title||'확인';
+    back.querySelector('.cf-msg').textContent=opts.message||'';
+    var ok=back.querySelector('#cf-ok'), cancel=back.querySelector('#cf-cancel');
+    ok.textContent=opts.okLabel||'확인';
+    ok.classList.toggle('danger',!!opts.danger);
+    function close(){
+      back.classList.remove('visible');
+      document.removeEventListener('keydown',onKey,true);
+      ok.onclick=null; cancel.onclick=null; back.onpointerdown=null;
+    }
+    function onKey(e){
+      if(e.key==='Escape'){ e.stopPropagation(); close(); }
+      else if(e.key==='Enter'){ e.stopPropagation(); close(); opts.onOk&&opts.onOk(); }
+    }
+    ok.onclick=function(e){ e.stopPropagation(); close(); opts.onOk&&opts.onOk(); };
+    cancel.onclick=function(e){ e.stopPropagation(); close(); };
+    back.onpointerdown=function(e){ if(e.target===back){ e.stopPropagation(); close(); } };
+    box.onpointerdown=function(e){ e.stopPropagation(); };
+    document.addEventListener('keydown',onKey,true);
+    back.classList.add('visible');
+    ok.focus();
+  }
+
   /* ── 도움말 ── */
   function toggleHelp(force){
     if(!_help) return;
@@ -138,7 +168,7 @@ App.Guide=(function(){
     if(!nowG&&!nowS) showErrorToast('이 회로에는 그릴 파형이 없습니다 — 축전기·코일을 넣거나 교류 전원을 쓰면 그래프가 생깁니다',2600);
   }
 
-  return{init:init, refresh:refresh, toggleHelp:toggleHelp, toggleGraph:toggleGraph, demoCircuit:_demoCircuit};
+  return{init:init, refresh:refresh, confirm:confirm, toggleHelp:toggleHelp, toggleGraph:toggleGraph, demoCircuit:_demoCircuit};
 })();
 
 }());
