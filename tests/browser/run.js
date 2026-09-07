@@ -580,7 +580,7 @@ async function inkCount(p,sel,pred){ return p.evaluate((sel,predSrc)=>{const cv=
   chk('상호유도 POE(직류): 유효·경고 없음·결합 1쌍', mi.valid&&mi.warn===0&&mi.couples===1, JSON.stringify(mi));
   chk('상호유도 POE(직류): 2차 전구 전류 펄스 > 30 mA 후 끝에서 < 1 mA, 1차 정상 120 mA, 2차 정상 0', mi.pk>0.03&&mi.end<1e-3&&Math.abs(mi.l1-0.12)<1e-4&&mi.l2<1e-9, JSON.stringify(mi));
   await L.mode(p,'run'); await L.sleep(400);
-  const miG=await p.evaluate(()=>({toggles:[...document.querySelectorAll('.tp-toggle')].map(b=>b.textContent), visible:document.getElementById('transient-panel').classList.contains('visible')}));
+  const miG=await p.evaluate(()=>({toggles:[...document.querySelectorAll('#transient-toggles .tp-toggle')].map(b=>b.textContent), visible:document.getElementById('transient-panel').classList.contains('visible')}));
   chk('상호유도 POE(직류) 실행 모드: 과도 그래프에 1차·2차 코일 곡선 둘 다', miG.visible&&miG.toggles.length===2&&/2차/.test(miG.toggles.join(' ')), JSON.stringify(miG));
   await L.mode(p,'edit');
   /* 2. POE 교류 변압기 1:2: 2차 전압 ≈ 19 V (k=0.99), 전원 평균전력 = 전구 평균전력 */
@@ -593,7 +593,7 @@ async function inkCount(p,sel,pred){ return p.evaluate((sel,predSrc)=>{const cv=
   const io=await p.evaluate(()=>{ const P=window.App.POE, S=window.App.State, ex=P.EXAMPLES.find(e=>e.id==='indopen'); P.open(); P.start(ex);
     document.querySelectorAll('#poe-body .poe-opt')[0].click(); [...document.querySelectorAll('#poe-body .poe-primary')].find(b=>/관찰/.test(b.textContent)).click();
     const sr=S.solverResult; const e=sr.wave&&sr.wave.elem[ex._ids.out]; let vmax=0; if(e) for(let n=0;n<e.v.length;n++) vmax=Math.max(vmax,Math.abs(e.v[n]));
-    return {mode:S.mode, ot:S.openTransient, sw:sr.switchState, wave:!!sr.wave, vmax, toggles:document.querySelectorAll('.tp-toggle').length}; });
+    return {mode:S.mode, ot:S.openTransient, sw:sr.switchState, wave:!!sr.wave, vmax, toggles:document.querySelectorAll('#transient-toggles .tp-toggle').length}; });
   chk('여는 과도 POE: 실행 모드 = 열림 뷰 + 파형, 전구 120 V, 그래프 곡선', io.mode==='run'&&io.ot&&io.sw==='open'&&io.wave&&Math.abs(io.vmax-120)<0.5&&io.toggles===1, JSON.stringify(io));
   await L.mode(p,'edit');
   /* 3c. 변형 비교 POE: 표가 60·40·20 mA 로 채워지고, 줄 클릭이 회로에 적용된다 */

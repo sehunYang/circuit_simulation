@@ -20,6 +20,10 @@ App.RunRenderer=(function(){
   var ELECTRON_SPEED_MAX     = 120;  // 최대 속도 (px/s)
   var ELECTRON_RADIUS        = 4;    // 전자 반지름 (px)
   var MAX_PARTICLES          = 50;   // 도선당 최대 파티클 수
+  /* 교류(주기 정상상태) 전자: 개수는 도선 전류의 "진폭"으로 정하고 바꾸지 않는다(밀도 = 전류 크기).
+   *   속력은 순시 전류에 비례하는 부호 있는 사인 — 방향이 바뀔 때 숨기거나 새로 뿌리지 않아
+   *   같은 전자가 제자리에서 왕복한다. 화면 주파수(visFreq)가 1~2 Hz 라 왕복 폭이 한 칸쯤 된다. */
+  var AC_SPEED_AMP           = 220;  // 순시 전류가 진폭 최댓값일 때의 전자 속력 (px/s)
 
   /* 도선의 파티클 수 — 회로 내 최대 전류 대비 비율(ratio)과 도선 길이에 비례.
    *   같은 비율이면 도선이 길수록 많아져 전자 '간격'이 일정하고,
@@ -73,6 +77,14 @@ App.RunRenderer=(function(){
    *
    * 부호 규약: 양수 = fromPort→toPort 방향 (wireSignedI 와 동일)
    * ─────────────────────────────────────────────────────────────── */
+  /* 주기 정상상태(교류)의 도선 풀 갱신: 부호 있는 사인 속력, 개수 고정 */
+  function _setPeriodic(pool, instI, ref){
+    var dir = instI >= 0 ? -1 : 1;                       /* 전자는 관례 전류의 반대 */
+    var spd = ref > 1e-15 ? Math.abs(instI)/ref*AC_SPEED_AMP : 0;
+    pool.particles.forEach(function(p){ p.dir = dir; p.speed = spd; });
+  }
+  var _ampMax = I_FLOOR;   /* 페이저 경로의 정규화 기준: 도선 전류 진폭의 최댓값 (_initPools 가 계산) */
+
   function _updatePoolsAC(t, sr){
     var phasor = sr.acPhasor;
     var jT     = NODE_TYPES;   /* 분기점·접지·라벨: 전류를 모르는 연결점 */
@@ -106,6 +118,7 @@ App.RunRenderer=(function(){
     App.State.wires.forEach(function(wire){
       var pool = _pools[wire.id]; if(!pool) return;
       var instI = wireInstI[wire.id] || 0;
+      if(sr.acPhasor){ _setPeriodic(pool, instI, _ampMax); return; }   /* 교류: 왕복 (아래는 옛 경로 — 도달하지 않음) */
       var absI  = Math.abs(instI);
       /* 전자는 관례 전류(instI>0 = from→to)의 반대로 움직인다 — DC 경로의
        * electronDir = −wireConvDir 와 같은 규약. (예전엔 부호를 그대로 써서
@@ -152,6 +165,7 @@ App.RunRenderer=(function(){
     App.State.wires.forEach(function(wire){
       var pool = _pools[wire.id]; if(!pool) return;
       var instI = sr.wave.sampleWire(wire.id, t);       /* from→to 가 + */
+      if(sr.acPhasor){ _setPeriodic(pool, instI, _waveMax); return; }   /* 교류·정류·혼합: 왕복, 개수 고정 */
       var absI  = Math.abs(instI);
       var newDir = instI >= 0 ? -1 : 1;                  /* 전자는 관례 전류의 반대 */
       var ratio = absI / _waveMax;
@@ -229,6 +243,7 @@ App.RunRenderer=(function(){
       var I = wireRef(wire);
       if(I > maxI) maxI = I;
     });
+    _ampMax = maxI;
 
     App.State.wires.forEach(function(wire){
       var I = wireRef(wire);
@@ -397,7 +412,7 @@ App.RunRenderer=(function(){
      * → 고주파일수록 더 빠르게 방향 전환, 하지만 모두 관찰 가능.
      * ─────────────────────────────────────────────────────────── */
     var sr = App.State.solverResult;
-    var VIS_BASE = 1.0;   /* 기준 주파수: 1Hz는 원래 속도 유지 */
+    var VIS_BASE = 0.4;   /* 화면 주파수 = 0.4·(f/0.4)^0.25 — 60 Hz → 1.4 Hz, 600 Hz → 2.5 Hz, 6 Hz → 0.8 Hz (왕복이 보이는 빠르기, 주파수 차이는 남김) */
     var VIS_EXP  = 0.25;  /* 지수: 0=모두 동일, 1=원래 주파수 그대로 */
     var tPhys = null;     /* 파형 재생 시 물리 시간 */
     if(sr && sr.acPhasor){
@@ -413,13 +428,17 @@ App.RunRenderer=(function(){
     }
     if(sr && sr.wave){
       if(sr.acPhasor){
-        /* 교류: 파형의 마지막 한 주기를 순환 (앞부분은 켜지는 과도) */
-        var P = 2*Math.PI/sr.acPhasor.omega;
-        tPhys = sr.wave.tMax - P + (_t % P);
+        /* 교류: 파형의 마지막 몇 주기(오실로스코프 창과 같은 길이)를 순환 — 커서가 창 처음부터 끝까지 쓸고 간다 */
+        var P = 2*Math.PI/sr.acPhasor.omega, K = (App.Scope&&App.Scope.PERIODS)||2, PK = P*K;
+        tPhys = sr.wave.tMax - PK + (_t % PK);
       } else {
         tPhys = Math.min(_t, sr.wave.tMax);
       }
       App.Events.emit('run:time', tPhys);
+    } else if(sr && sr.acPhasor){
+      /* 페이저만(선형 교류): 오실로스코프가 페이저로 합성한 창 [0, K·P) 위를 커서가 돈다 */
+      var P2 = 2*Math.PI/sr.acPhasor.omega, K2 = (App.Scope&&App.Scope.PERIODS)||2;
+      App.Events.emit('run:time', _t % (P2*K2));
     }
 
     var vs0=App.Geo.viewSize();
