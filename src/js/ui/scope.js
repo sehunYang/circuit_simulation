@@ -8,6 +8,13 @@ var App=window.App;
  *   실행 모드에서 파형(solverResult.wave)이 있고 회로에 교류 또는 비선형
  *   소자가 있을 때 열린다 (선형 직류 과도는 과도 응답 그래프가 맡는다).
  *   그리는 것: 토글로 켠 소자들의 v(t)(실선, 왼쪽 축)·i(t)(점선, 오른쪽 축) — 소자마다 색.
+ *
+ *   표시 방향(_orient): 소자는 저마다 "ports[0]→ports[1] 로 흐르는 전류"를 + 로 쓴다.
+ *   그래서 같은 직렬 회로인데도 소자를 돌려 놓거나 전원처럼 전류를 내보내는 소자는
+ *   파형이 180° 뒤집혀 보인다 — 값은 맞지만 "직렬이면 전류가 같다"를 가르치는 화면에서는
+ *   오해를 부른다. 그리기 전에 회로를 도는 방향(전원 + 단자에서 나가는 쪽)을 + 로 잡아
+ *   소자마다 부호를 맞춘다. 수동 소자는 v·i 를 함께 뒤집으므로 P = vi 와 위상 관계가 보존되고
+ *   (거꾸로 이은 소자는 반대 단자에서 본 것과 같다), 전원은 내보내는 전류만 뒤집는다.
  *   기본은 전원 + 첫 저항/전구, 캔버스에서 소자를 클릭하면 그 소자가 켜진다. v(t)/i(t) 전체 토글.
  *   시간 창 = 정상상태 마지막 PERIODS 주기이고 실행 모드가 같은 구간을 순환하므로
  *   커서(run:time)가 창 처음부터 끝까지 쓸고 간다.
@@ -77,13 +84,43 @@ App.Scope=(function(){
     if(sel&&sel!==_lastSel&&cands.some(function(c){return c.id===sel;})) _active[sel]=true;
     _lastSel=sel;
   }
+  /* 회로를 도는 방향을 + 로 잡은 소자별 부호 { compId:{v,i} } */
+  function _orient(sr){
+    var sign={}, cn=sr.componentNodes||{}, comps=App.State.components;
+    var src=comps.filter(function(c){return c.type===TYPE.AC_SOURCE||c.type===TYPE.DC_SOURCE;})[0];
+    if(!src||!cn[src.id]) return sign;
+    sign[src.id]={v:1,i:-1};                     /* 전원: 내보내는 전류를 + (전압은 단자 그대로) */
+    var byNode={};
+    comps.forEach(function(c){
+      if(NODE_TYPES[c.type]||c.type===TYPE.SWITCH||c.id===src.id) return;
+      var nn=cn[c.id]; if(!nn||nn.length!==2||nn[0]===nn[1]) return;
+      (byNode[nn[0]]=byNode[nn[0]]||[]).push({c:c,port:0});
+      (byNode[nn[1]]=byNode[nn[1]]||[]).push({c:c,port:1});
+    });
+    var seen={}, vis={}, q=[cn[src.id][0]];      /* 전원의 ports[0] 노드에서 출발 */
+    vis[q[0]]=true;
+    while(q.length){
+      var n=q.shift();
+      (byNode[n]||[]).forEach(function(e){
+        if(seen[e.c.id]) return;
+        seen[e.c.id]=true;
+        var s=(e.port===0)?1:-1;                 /* 들어오는 쪽이 ports[1] 이면 거꾸로 이은 소자 */
+        sign[e.c.id]={v:s,i:s};
+        var other=cn[e.c.id][e.port===0?1:0];
+        if(!vis[other]){ vis[other]=true; q.push(other); }
+      });
+    }
+    return sign;
+  }
   function _traces(){
+    var sr=App.State.solverResult;
     var cands=_candidates(); _syncActive(cands); var out=[];
+    var sign=_orient(sr);
     cands.forEach(function(c,i){
       if(!_active[c.id]) return;
-      var col=COLORS[i%COLORS.length];
-      if(_showV) out.push({id:c.id,kind:'v',color:col,label:_name(c)+' v(t)'});
-      if(_showI) out.push({id:c.id,kind:'i',color:col,label:_name(c)+' i(t)',dash:[5,3]});
+      var col=COLORS[i%COLORS.length], sg=sign[c.id]||{v:1,i:1};
+      if(_showV) out.push({id:c.id,kind:'v',color:col,sign:sg.v,label:_name(c)+' v(t)'});
+      if(_showI) out.push({id:c.id,kind:'i',color:col,sign:sg.i,label:_name(c)+' i(t)',dash:[5,3]});
     });
     return out;
   }
@@ -149,7 +186,9 @@ App.Scope=(function(){
     var win={t0:t0,span:span,n0:n0};
     traces.forEach(function(tr){ tr.s=_series(sr,tr.id,tr.kind,win); });
     traces=traces.filter(function(tr){return !!tr.s;});
-    /* 축 범위 */
+    /* 축 범위 — 그리는 채널만 (v 만 켜면 전류 축을, i 만 켜면 전압 축을 감춘다) */
+    var hasV=traces.some(function(t){return t.kind==='v';});
+    var hasI=traces.some(function(t){return t.kind==='i';});
     var vMax=0,iMax=0;
     traces.forEach(function(tr){ var a=tr.s.a; for(var k=tr.s.n0;k<tr.s.n1;k++){ var m=Math.abs(a[k]); if(tr.kind==='v'){ if(m>vMax)vMax=m; } else if(m>iMax) iMax=m; } });
     vMax=_nice(vMax*1.05||1); iMax=_nice(iMax*1.05||1);
@@ -164,17 +203,19 @@ App.Scope=(function(){
     /* 눈금 글자 */
     c.font='10px '+(App.SN&&App.SN.TOKENS?App.SN.TOKENS.font:'serif'); c.fillStyle='#374151';
     c.textAlign='right'; c.textBaseline='middle';
-    c.fillStyle=COL_V; c.fillText('+'+_fmt(vMax,'V'),PAD.l-4,PAD.t+4); c.fillText('−'+_fmt(vMax,'V'),PAD.l-4,PAD.t+gH-4); c.fillText('0',PAD.l-4,yZero);
-    c.textAlign='left'; c.fillStyle=COL_I; c.fillText('+'+_fmt(iMax,'A'),PAD.l+gW+4,PAD.t+4); c.fillText('−'+_fmt(iMax,'A'),PAD.l+gW+4,PAD.t+gH-4);
+    if(hasV){ c.fillStyle=COL_V; c.fillText('+'+_fmt(vMax,'V'),PAD.l-4,PAD.t+4); c.fillText('−'+_fmt(vMax,'V'),PAD.l-4,PAD.t+gH-4); }
+    c.fillStyle='#374151'; c.fillText('0',PAD.l-4,yZero);
+    if(hasI){ c.textAlign='left'; c.fillStyle=COL_I; c.fillText('+'+_fmt(iMax,'A'),PAD.l+gW+4,PAD.t+4); c.fillText('−'+_fmt(iMax,'A'),PAD.l+gW+4,PAD.t+gH-4); }
+    c.textAlign='right';
     c.textAlign='center'; c.textBaseline='top'; c.fillStyle='#374151';
     for(var g3=0;g3<=5;g3++){ var tt=t0+span*g3/5; c.fillText(tt<=0?'0':_fmtT(tt),PAD.l+gW*g3/5,PAD.t+gH+4); }
     /* 파형 */
     traces.forEach(function(tr){
       var a=tr.s.a, ta=tr.s.t, k0=tr.s.n0, k1=tr.s.n1, scale=(tr.kind==='v'?vMax:iMax);
       c.strokeStyle=tr.color; c.lineWidth=tr.kind==='v'?2:1.6; c.setLineDash(tr.dash||[]); c.beginPath();
-      var step=Math.max(1,Math.floor((k1-k0)/(gW*2)));
+      var step=Math.max(1,Math.floor((k1-k0)/(gW*2))), sg=(tr.sign==null?1:tr.sign);
       for(var k=k0;k<k1;k+=step){
-        var x=PAD.l+gW*((ta[k]-t0)/span), y=yZero-(a[k]/scale)*(gH/2);
+        var x=PAD.l+gW*((ta[k]-t0)/span), y=yZero-(sg*a[k]/scale)*(gH/2);
         if(k===k0) c.moveTo(x,y); else c.lineTo(x,y);
       }
       c.stroke();
@@ -187,9 +228,29 @@ App.Scope=(function(){
     if(_legend){
       _legend.innerHTML='';
       traces.forEach(function(tr){ var s=document.createElement('span'); s.style.color=tr.color; s.innerHTML=(tr.kind==='v'?'— ':'┅ ')+'<b>'+tr.label+'</b>'; _legend.appendChild(s); });
-      var hint=document.createElement('span'); hint.textContent=traces.length?'':'위 버튼으로 소자를 켜세요'; _legend.appendChild(hint);
+      var msg='';
+      if(!traces.length) msg='위 버튼으로 소자를 켜세요';
+      else if(hasI) msg='전류는 회로를 도는 방향(전원에서 나가는 쪽)을 + 로 그립니다'+(_coincide(traces,w)?' — 직렬로 이은 소자라 전류가 모두 같습니다':'');
+      if(msg){ var hint=document.createElement('span'); hint.className='sc-note'; hint.textContent=msg; _legend.appendChild(hint); }
     }
   }
+  /* 켠 전류 파형들이 사실상 같은 곡선인가 (직렬) */
+  function _coincide(traces,w){
+    var cur=traces.filter(function(t){return t.kind==='i'&&t.s;});
+    if(cur.length<2) return false;
+    var ref=cur[0], peak=0, k;
+    for(k=ref.s.n0;k<ref.s.n1;k++) peak=Math.max(peak,Math.abs(ref.s.a[k]));
+    if(!(peak>0)) return false;
+    for(var j=1;j<cur.length;j++){
+      var t=cur[j]; if(t.s.n1-t.s.n0!==ref.s.n1-ref.s.n0) return false;
+      for(k=0;k<ref.s.n1-ref.s.n0;k+=3){
+        var d=Math.abs((ref.sign||1)*ref.s.a[ref.s.n0+k]-(t.sign||1)*t.s.a[t.s.n0+k]);
+        if(d>peak*0.02) return false;
+      }
+    }
+    return true;
+  }
+
   function _drawCursor(t){
     _cursorT=t;
     if(!_snapshot||!_plot||!_ctx) return;
@@ -202,6 +263,8 @@ App.Scope=(function(){
   }
 
   return{init:init, show:show, hide:hide, toggle:toggle, applicable:applicable, redraw:_draw, PERIODS:PERIODS,
+         /* 표시 방향 부호 { compId:{v,i} } — 테스트·점검용 */
+         orientation:function(){ return _orient(App.State.solverResult); },
          setActive:function(id,on){ _active[id]=!!on; if(_visible) _draw(); }};
 })();
 

@@ -30,7 +30,9 @@ App.PropPanel=(function(){
     DC_SOURCE:[{label:'전압',    key:'value', unit:'V',  ds:1,   df:1, min:0,     max:9999, step:1}, RINT],
     /* 레일 라벨: 전위 0 = 연결 라벨만, 0 이 아니면 접지 기준 직류 전원 (같은 이름은 함께 바뀐다) */
     LABEL:    [{label:'전위',    key:'value', unit:'V',  ds:1,   df:1, min:-999,  max:999,  step:1, syncName:true}],
-    AC_SOURCE:[{label:'전압',    key:'value', unit:'V',  ds:1,   df:1, min:0,     max:9999, step:1},
+    /* 교류 전원의 value 는 진폭(최댓값)이다 — 가정용 220 V 처럼 실효값으로 읽기 쉬워 라벨에 명시한다.
+        실효값은 아래 측정값의 “전압(RMS)” 에 따로 나온다 (사인파면 최댓값/√2). */
+    AC_SOURCE:[{label:'전압(최댓값)',key:'value',unit:'V',ds:1, df:1, min:0,     max:9999, step:1},
                {label:'주파수', key:'value2',unit:'Hz', ds:1,   df:0, min:1,     max:1e6,  step:1}, RINT],
     RESISTOR: [{label:'저항',   key:'value', unit:'Ω',  ds:1,   df:0, min:0.001, max:1e9,  step:1}],
     BULB:     [{label:'저항',   key:'value', unit:'Ω',  ds:1,   df:0, min:0.001, max:1e9,  step:1},

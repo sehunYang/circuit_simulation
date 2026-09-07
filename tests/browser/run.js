@@ -731,6 +731,80 @@ async function inkCount(p,sel,pred){ return p.evaluate((sel,predSrc)=>{const cv=
   const empty=await p.evaluate(()=>({dlg:!!document.querySelector('#confirm-back.visible'), toast:document.getElementById('toast').textContent}));
   chk('초기화: 빈 회로에서는 대화상자 없이 안내만', !empty.dlg&&/지울 회로가 없습니다/.test(empty.toast), JSON.stringify(empty));
 
+  /* 5c. RLC 직렬 교류: 오실로스코프가 전류를 회로 도는 방향으로 맞춰 그린다 (전원·거꾸로 이은 소자 포함) */
+  async function buildRLC(rev){
+    return p.evaluate((rev)=>{
+      const S=window.App.State; S.components.map(c=>c.id).forEach(id=>{ if(S.getComponent(id)) S.removeComponent(id); });
+      const mk=(t,x,y,rot,v,v2,extra)=>{ const c={id:S.genId(),type:t,gridX:x,gridY:y,rotation:rot||0,value:v,value2:(v2==null?null:v2),label:''};
+        if(extra) Object.assign(c,extra); S.addComponent(c); return c; };
+      const V=mk('AC_SOURCE',45,48,90,220,60,{rint:0}), sw=mk('SWITCH',45,47,90,0,null,{});
+      const R=mk('BULB',47,45,0,100,100,{label:'전구'}), Lc=mk('INDUCTOR',49,45,0,10e-3), Cc=mk('CAPACITOR',51,45,0,100e-6);
+      sw.autoFor=V.id;
+      const W=(a,ap,c,cp,d)=>S.addWire({id:S.genId(),fromId:a.id,fromPort:ap,toId:c.id,toPort:cp,direction:d||'H-first'});
+      W(V,'L',sw,'R'); W(sw,'L',R,'L','V-first'); W(R,'R',Lc,'L');
+      if(rev){ W(Lc,'R',Cc,'R'); W(Cc,'L',V,'R','V-first'); } else { W(Lc,'R',Cc,'L'); W(Cc,'R',V,'R','V-first'); }
+      window.App.Solver.solveNow();
+      return {V:V.id,R:R.id,L:Lc.id,C:Cc.id};
+    }, rev);
+  }
+  for(const rev of [false,true]){
+    const ids=await buildRLC(rev);
+    await L.mode(p,'run'); await L.sleep(500);
+    const r=await p.evaluate((ids)=>{
+      const S=window.App.State, sr=S.solverResult, Sc=window.App.Scope;
+      Object.values(ids).forEach(id=>Sc.setActive(id,true));
+      Sc.redraw();
+      const sg=Sc.orientation();
+      const ph=id=>{ const I=sr.acPhasor.compI[id]; return Math.atan2(I.im,I.re)*180/Math.PI; };
+      /* 표시 위상 = 부호를 적용한 전류 위상 (180° 더하기) */
+      const disp=id=>{ let a=ph(id)+((sg[id]&&sg[id].i<0)?180:0); while(a>180)a-=360; while(a<-180)a+=360; return a; };
+      return {raw:{V:ph(ids.V),R:ph(ids.R),C:ph(ids.C)}, disp:{V:disp(ids.V),R:disp(ids.R),L:disp(ids.L),C:disp(ids.C)},
+              legend:document.getElementById('scope-legend').textContent,
+              Vpeak:window.App.Post.displayV(sr,ids.V).peak, Vrms:window.App.Post.displayV(sr,ids.V).rms,
+              Ipeak:window.App.Post.display(sr,ids.R).peak, VR:window.App.Post.displayV(sr,ids.R).peak,
+              VL:window.App.Post.displayV(sr,ids.L).peak, VC:window.App.Post.displayV(sr,ids.C).peak};
+    }, ids);
+    const spread=Math.max(...['V','R','L','C'].map(k=>Math.abs(r.disp[k]-r.disp.R)));
+    chk('RLC 오실로스코프'+(rev?'(축전기를 거꾸로 이음)':'')+': 전원·R·L·C 의 표시 전류 위상이 모두 같다',
+        spread<1e-6, JSON.stringify(r.disp));
+    chk('RLC 오실로스코프'+(rev?'(거꾸로)':'')+': 범례에 "직렬로 이은 소자라 전류가 모두 같습니다"',
+        /직렬로 이은 소자라 전류가 모두 같습니다/.test(r.legend), r.legend.slice(-60));
+    if(!rev){
+      /* 소자의 자체 규약은 그대로 (전원은 내보내는 전류라 180° 차이) — 값·전력 부호는 건드리지 않았다 */
+      chk('RLC: 소자 자체 규약은 유지 (전원 전류는 부하와 180° 차이)', Math.abs(Math.abs(r.raw.V-r.raw.R)-180)<1e-6, JSON.stringify(r.raw));
+      /* 이론값: X_L=3.770, X_C=26.526, |Z|=102.56 Ω, I=V/|Z| (value 는 최댓값) */
+      const w=2*Math.PI*60, XL=w*10e-3, XC=1/(w*100e-6), Z=Math.hypot(100,XL-XC), Im=220/Z;
+      chk('RLC 값: 전원 최댓값 220 V · 실효값 155.6 V (value = 진폭)', Math.abs(r.Vpeak-220)<1e-6&&Math.abs(r.Vrms-220/Math.SQRT2)<1e-3, JSON.stringify({p:r.Vpeak,r:r.Vrms}));
+      chk('RLC 값: I=2.145 A, V_R=214.5 V, V_L=8.09 V, V_C=56.9 V (닫힌형과 일치)',
+          Math.abs(r.Ipeak-Im)<1e-4&&Math.abs(r.VR-Im*100)<1e-3&&Math.abs(r.VL-Im*XL)<1e-3&&Math.abs(r.VC-Im*XC)<1e-3,
+          JSON.stringify({I:r.Ipeak,VR:r.VR,VL:r.VL,VC:r.VC}));
+    }
+    await L.mode(p,'edit');
+  }
+  /* 5d. 한 채널만 켜면 반대쪽 축 눈금을 감춘다 */
+  const ids2=await buildRLC(false);
+  await L.mode(p,'run'); await L.sleep(400);
+  const axes=await p.evaluate((ids)=>{
+    const Sc=window.App.Scope; Object.values(ids).forEach(id=>Sc.setActive(id,true));
+    const read=()=>{ const cv=document.getElementById('scope-canvas'), c=cv.getContext('2d');
+      const d=c.getImageData(0,0,60,cv.height).data; let blue=0; for(let i=0;i<d.length;i+=4) if(d[i+2]>150&&d[i]<100) blue++;
+      const e=c.getImageData(cv.width-56,0,56,cv.height).data; let orange=0; for(let i=0;i<e.length;i+=4) if(e[i]>150&&e[i+1]<130&&e[i+2]<80) orange++;
+      return {leftV:blue, rightA:orange}; };
+    const both=read();
+    [...document.querySelectorAll('#scope-toggles .tp-toggle')].find(b=>b.textContent==='i(t)').click();
+    const vOnly=read();
+    [...document.querySelectorAll('#scope-toggles .tp-toggle')].find(b=>b.textContent==='i(t)').click();
+    [...document.querySelectorAll('#scope-toggles .tp-toggle')].find(b=>b.textContent==='v(t)').click();
+    const iOnly=read();
+    [...document.querySelectorAll('#scope-toggles .tp-toggle')].find(b=>b.textContent==='v(t)').click();
+    return {both, vOnly, iOnly};
+  }, ids2);
+  /* 소자 색에 주황(#b45309)이 있어 파형 몇 픽셀이 오른쪽 여백에 번질 수 있으므로 '눈금이 사라졌는지'는 큰 폭의 감소로 본다 */
+  chk('오실로스코프 축: v(t) 만 켜면 전류 축, i(t) 만 켜면 전압 축 눈금이 사라진다',
+      axes.both.leftV>10&&axes.both.rightA>10&&axes.vOnly.rightA<axes.both.rightA*0.25&&axes.iOnly.leftV<axes.both.leftV*0.25,
+      JSON.stringify(axes));
+  await L.mode(p,'edit');
+
   /* 6. 모바일: 모드 바와 툴바가 겹치지 않는다 */
   const mp=await L.newPage(b,390,780,2,true);
   await L.sleep(500);
